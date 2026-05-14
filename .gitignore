@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Database
+test.db
+*.sqlite3
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Project secrets (IMPORTANT)
+.env
+service-account.json
+KEYS/
+
+# Mobile dependencies and builds
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/web-build/
+
+# Temporary files
+temp/
+assets/temp/

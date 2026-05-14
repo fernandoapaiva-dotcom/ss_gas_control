@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  # Banco de Dados PostgreSQL dedicado ao sistema de Gás
+  db_gas:
+    image: postgres:15
+    container_name: ss_gas_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-gas_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-gas_pass_123}
+      POSTGRES_DB: ${DB_NAME:-ss_gas_control}
+    volumes:
+      - gas_db_data:/var/lib/postgresql/data
+    networks:
+      - gas_network
+
+  # Backend FastAPI do sistema de Gás
+  backend_gas:
+    build: .
+    container_name: ss_gas_backend
+    restart: always
+    ports:
+      - "8002:8000" # Porta externa 8002 mapeada para 8000 do container
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-gas_user}:${DB_PASSWORD:-gas_pass_123}@db_gas:5432/${DB_NAME:-ss_gas_control}
+      - DRIVE_ROOT_FOLDER_ID=${DRIVE_ROOT_FOLDER_ID}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/service-account.json
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+    volumes:
+      # Mount para o arquivo de credenciais, pasta temporária e frontend para updates rápidos
+      - ./service-account.json:/app/service-account.json:ro
+      - ./frontend:/app/frontend
+    depends_on:
+      - db_gas
+    networks:
+      - gas_network
+
+networks:
+  gas_network:
+    driver: bridge
+
+volumes:
+  gas_db_data:

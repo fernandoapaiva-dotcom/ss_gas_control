@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+sqlalchemy
+psycopg2-binary
+python-multipart
+supabase==2.11.0

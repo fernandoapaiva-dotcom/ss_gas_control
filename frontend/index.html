@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SS Gas Control - Servsolda</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header id="main-header" style="display: none;">
+            <div class="container">
+                <div class="logo">
+                    <img src="/assets/logo/SERVSOLDAPNG.png" alt="Servsolda Logo" class="logo-img">
+                </div>
+                <nav id="nav-menu" style="display: flex; gap: 1rem;">
+                    <button class="btn btn-outline nav-link active" onclick="showView('driver-view')">Motorista</button>
+                    <button class="btn btn-outline nav-link" id="admin-nav-btn" style="display: none;" onclick="showView('admin-view')">Admin</button>
+                </nav>
+                <div class="user-menu" style="display: flex; align-items: center; gap: 1rem;">
+                    <span id="user-name">Usuário</span>
+                    <button id="logout-btn" class="btn btn-outline" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">
+                        <i class="fas fa-sign-out-alt"></i> Sair
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="container">
+            <!-- Login View -->
+            <section id="login-view" class="view active">
+                <div class="login-card">
+                    <img src="/assets/logo/SERVSOLDAPNG.png" alt="Servsolda Logo" style="width: 150px; margin-bottom: 2rem;">
+                    <h1>SS Gas Control</h1>
+                    <form id="login-form">
+                        <div class="form-group">
+                            <label for="email">E-mail</label>
+                            <input type="email" id="email" class="form-control" placeholder="seu@email.com" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="password">Senha</label>
+                            <input type="password" id="password" class="form-control" placeholder="••••••••" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width: 100%;">
+                            Entrar <i class="fas fa-arrow-right"></i>
+                        </button>
+                    </form>
+                    <div id="login-error" style="color: var(--danger); margin-top: 1rem; font-size: 0.9rem; display: none;"></div>
+                </div>
+            </section>
+
+            <!-- Driver View -->
+            <section id="driver-view" class="view">
+                <div class="header-action">
+                    <h2>Nova Entrega</h2>
+                    <p>Registre a entrega dos cilindros abaixo.</p>
+                </div>
+
+                <div class="card" style="margin-top: 1.5rem;">
+                    <form id="delivery-form">
+                        <div class="form-group">
+                            <label>CNPJ ou CPF do Cliente</label>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <input type="text" id="client-doc" class="form-control" placeholder="00.000.000/0000-00">
+                                <button type="button" id="search-client" class="btn btn-outline">
+                                    <i class="fas fa-search"></i>
+                                </button>
+                            </div>
+                            <div id="client-info" style="margin-top: 0.5rem; font-weight: 600; color: var(--primary); display: none;"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Número do Documento (NF/Pedido)</label>
+                            <input type="text" id="doc-number" class="form-control" placeholder="Ex: 12345">
+                        </div>
+
+                        <div id="items-container">
+                            <!-- Items will be added here -->
+                        </div>
+
+                        <button type="button" id="add-item" class="btn btn-outline" style="width: 100%; margin-bottom: 1.5rem;">
+                            <i class="fas fa-plus"></i> Adicionar Cilindro
+                        </button>
+
+                        <button type="submit" class="btn btn-primary" style="width: 100%;">
+                            Finalizar Entrega <i class="fas fa-check"></i>
+                        </button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- Admin View -->
+            <section id="admin-view" class="view">
+                <div class="header-action" style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2>Painel Administrativo</h2>
+                    <button id="refresh-data" class="btn btn-outline">
+                        <i class="fas fa-sync"></i> Atualizar
+                    </button>
+                </div>
+
+                <div class="grid">
+                    <div class="card">
+                        <h3>Últimas Entregas</h3>
+                        <div id="history-list" style="margin-top: 1rem;">
+                            <p>Carregando histórico...</p>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Gestão de Usuários</h3>
+                        <div id="user-list" style="margin-top: 1rem;">
+                            <p>Carregando usuários...</p>
+                        </div>
+                        <button id="add-user-btn" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">
+                            Novo Usuário
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js"></script>
+</body>
+</html>
