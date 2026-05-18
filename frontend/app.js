@@ -102,9 +102,9 @@ async function handleAuthSuccess(user) {
     const adminCard = document.getElementById('admin-card');
     if (adminCard) adminCard.style.display = isAdmin ? 'flex' : 'none';
     
-    // Restaurar a última tela visualizada
+    // Restaurar a última tela visualizada (ignorando login-view)
     const savedView = localStorage.getItem('active_view');
-    if (savedView) {
+    if (savedView && savedView !== 'login-view') {
         showView(savedView);
     } else if (localStorage.getItem('gas_draft')) {
         showView('driver-view');
