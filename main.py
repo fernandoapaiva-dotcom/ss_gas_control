@@ -85,6 +85,104 @@ async def update_cliente_localizacao(
     db.commit()
     return {"status": "success", "lat": lat, "lng": lng}
 
+# --- USER CRUD (ADMIN ONLY) ---
+
+@app.get("/api/admin/usuarios")
+async def list_usuarios(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user.get("nivel_acesso") != "adm":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    usuarios = db.query(Usuario).all()
+    return [{"id": u.id, "nome": u.nome, "usuario": u.usuario, "nivel_acesso": u.nivel_acesso} for u in usuarios]
+
+@app.post("/api/admin/usuarios")
+async def create_usuario(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user.get("nivel_acesso") != "adm":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+        
+    nome = payload.get("nome")
+    email = payload.get("usuario")
+    senha = payload.get("senha")
+    nivel = payload.get("nivel_acesso", "usuario")
+    
+    if not nome or not email or not senha:
+        raise HTTPException(status_code=400, detail="Nome, e-mail e senha são obrigatórios")
+        
+    existing = db.query(Usuario).filter(Usuario.usuario == email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Usuário já cadastrado com este e-mail")
+        
+    import hashlib
+    senha_hash = hashlib.sha256(senha.encode()).hexdigest()
+    
+    novo_usuario = Usuario(
+        nome=nome,
+        usuario=email,
+        senha_hash=senha_hash,
+        nivel_acesso=nivel
+    )
+    db.add(novo_usuario)
+    db.commit()
+    db.refresh(novo_usuario)
+    return {"status": "success", "id": novo_usuario.id}
+
+@app.put("/api/admin/usuarios/{user_id}")
+async def update_usuario(
+    user_id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user.get("nivel_acesso") != "adm":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+        
+    usuario_db = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not usuario_db:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        
+    nome = payload.get("nome")
+    email = payload.get("usuario")
+    senha = payload.get("senha")
+    nivel = payload.get("nivel_acesso")
+    
+    if nome:
+        usuario_db.nome = nome
+    if email:
+        usuario_db.usuario = email
+    if nivel:
+        usuario_db.nivel_acesso = nivel
+    if senha:
+        import hashlib
+        usuario_db.senha_hash = hashlib.sha256(senha.encode()).hexdigest()
+        
+    db.commit()
+    return {"status": "success"}
+
+@app.delete("/api/admin/usuarios/{user_id}")
+async def delete_usuario(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user.get("nivel_acesso") != "adm":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+        
+    usuario_db = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not usuario_db:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        
+    db.delete(usuario_db)
+    db.commit()
+    return {"status": "success"}
+
+
+
 @app.get("/api/cnpj/{documento}")
 async def focus_cnpj(documento: str, db: Session = Depends(get_db)):
     print(f"[RASTREIO] Buscando CNPJ: {documento}")

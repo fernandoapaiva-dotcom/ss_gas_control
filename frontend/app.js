@@ -67,14 +67,40 @@ function setupEventListeners() {
     };
 }
 
-function handleAuthSuccess(user) {
+async function handleAuthSuccess(user) {
     currentUser = user;
     document.getElementById('main-header').style.display = 'block';
-    const isAdmin = user.email.includes('admin') || user.email === 'comercial@servweld.com.br';
+    
+    // Tenta obter os dados do perfil do banco local (Nome Completo / Nível de Acesso)
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch('/api/usuarios/me', {
+            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        });
+        if (res.ok) {
+            const dbUser = await res.json();
+            if (dbUser) {
+                currentUser.nome = dbUser.nome;
+                currentUser.nivel_acesso = dbUser.nivel_acesso;
+            }
+        }
+    } catch (err) {
+        console.error("Erro ao carregar dados do usuário local:", err);
+    }
+
+    const displayName = currentUser.nome || user.email.split('@')[0];
+    const nameEl = document.getElementById('user-display-name');
+    if (nameEl) nameEl.innerText = displayName;
+    
+    const heroNameEl = document.getElementById('user-display-name-hero');
+    if (heroNameEl) heroNameEl.innerText = displayName;
+    
+    const isAdmin = (currentUser.nivel_acesso === 'adm') || 
+                    user.email.toLowerCase().includes('admin') || 
+                    user.email.toLowerCase() === 'comercial@servweld.com.br';
+                    
     const adminCard = document.getElementById('admin-card');
     if (adminCard) adminCard.style.display = isAdmin ? 'flex' : 'none';
-    const nameEl = document.getElementById('user-display-name');
-    if (nameEl) nameEl.innerText = user.email.split('@')[0];
     
     // Restaurar a última tela visualizada
     const savedView = localStorage.getItem('active_view');
@@ -97,6 +123,7 @@ function showView(viewId) {
     
     if (viewId === 'history-view') loadHistory();
     if (viewId === 'clients-view') loadClients();
+    if (viewId === 'admin-view') loadUsers();
 }
 
 let itemCounter = 0;
@@ -297,7 +324,7 @@ function renderClientsList(clients) {
                     <h4 style="margin: 0 0 6px 0; font-size: 0.95rem; color: var(--dark); line-height: 1.3; font-weight: 700; word-break: break-word; flex: 1;">${c.nome_razao || "Sem Nome"}</h4>
                     ${isAdmin && hasLocation ? `
                         <button onclick="deleteClientLocation('${c.cnpj}')" class="btn btn-outline" style="border: none; color: var(--danger); padding: 4px 8px; width: auto; font-size: 0.9rem; background: transparent; cursor: pointer; display: inline-flex;" title="Excluir Localização">
-                            <i class="far fa-trash-alt"></i>
+                            <i class="fas fa-trash-alt"></i>
                         </button>
                     ` : ''}
                 </div>
@@ -547,7 +574,205 @@ async function deleteClientLocation(cnpj) {
 }
 
 function isAdminUser() {
-    return currentUser && (currentUser.email.includes('admin') || currentUser.email === 'comercial@servweld.com.br');
+    if (!currentUser) return false;
+    if (currentUser.nivel_acesso === 'adm') return true;
+    const email = (currentUser.email || "").toLowerCase();
+    return email.includes('admin') || email === 'comercial@servweld.com.br';
+}
+
+let allUsers = [];
+
+async function loadUsers() {
+    const container = document.getElementById('user-list-container');
+    if (!container) return;
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch('/api/admin/usuarios', {
+            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        });
+        
+        if (res.ok) {
+            allUsers = await res.json();
+            renderUsersList(allUsers);
+        } else {
+            container.innerHTML = `<p style="text-align: center; color: var(--danger); padding: 2rem;">Acesso negado ou erro ao carregar usuários.</p>`;
+        }
+    } catch (err) {
+        container.innerHTML = `<p style="text-align: center; color: var(--danger); padding: 2rem;">Erro ao conectar ao servidor.</p>`;
+    }
+}
+
+function renderUsersList(users) {
+    const container = document.getElementById('user-list-container');
+    if (!container) return;
+    
+    // Grid Layout responsivo para usuários
+    container.style.display = 'grid';
+    container.style.gridTemplateColumns = 'repeat(auto-fill, minmax(280px, 1fr))';
+    container.style.gap = '16px';
+    
+    container.innerHTML = users.map(u => {
+        const isAdmUser = u.nivel_acesso === 'adm';
+        const roleBadge = isAdmUser 
+            ? `<span style="background: #fce4ec; color: #c2185b; padding: 4px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;"><i class="fas fa-user-shield"></i> Administrador</span>`
+            : `<span style="background: #e3f2fd; color: #1976d2; padding: 4px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;"><i class="fas fa-truck"></i> Motorista</span>`;
+            
+        return `
+        <div class="list-item" style="padding: 16px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); border-top: 4px solid ${isAdmUser ? '#c2185b' : 'var(--primary)'}; display: flex; flex-direction: column; justify-content: space-between; min-height: 140px; margin-bottom: 0;">
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">
+                    <h4 style="margin: 0; font-size: 0.95rem; color: var(--dark); font-weight: 700; line-height: 1.3; word-break: break-word;">${u.nome}</h4>
+                    <div style="display: flex; gap: 4px;">
+                        <button onclick="openUserModal(${u.id})" class="btn btn-outline" style="border: none; color: var(--primary); padding: 4px 6px; width: auto; font-size: 0.85rem; background: transparent; cursor: pointer;" title="Editar Usuário">
+                            <i class="fas fa-pencil-alt"></i>
+                        </button>
+                        <button onclick="deleteUser(${u.id})" class="btn btn-outline" style="border: none; color: var(--danger); padding: 4px 6px; width: auto; font-size: 0.85rem; background: transparent; cursor: pointer;" title="Excluir Usuário">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                </div>
+                <p style="font-size: 0.8rem; color: #666; margin: 0 0 12px 0; display: flex; align-items: center; gap: 6px; word-break: break-word;">
+                    <i class="fas fa-envelope" style="color: #bbb;"></i> ${u.usuario}
+                </p>
+            </div>
+            <div style="margin-top: auto;">
+                ${roleBadge}
+            </div>
+        </div>
+        `;
+    }).join('') || `<p style="text-align: center; color: #999; padding: 2rem; grid-column: 1 / -1;">Nenhum usuário cadastrado.</p>`;
+}
+
+function openUserModal(userId = null) {
+    const modal = document.getElementById('user-modal');
+    const form = document.getElementById('user-form');
+    const title = document.getElementById('user-modal-title');
+    const idField = document.getElementById('user-id-field');
+    const nomeField = document.getElementById('user-nome-field');
+    const emailField = document.getElementById('user-email-field');
+    const senhaField = document.getElementById('user-senha-field');
+    const senhaHelp = document.getElementById('user-senha-help');
+    const nivelField = document.getElementById('user-nivel-field');
+    
+    if (!modal || !form) return;
+    
+    form.reset();
+    
+    if (userId) {
+        // Modo Edição
+        const user = allUsers.find(u => u.id === userId);
+        if (!user) return;
+        
+        title.innerHTML = `<i class="fas fa-user-edit" style="color: var(--primary);"></i> Editar Usuário`;
+        idField.value = user.id;
+        nomeField.value = user.nome;
+        emailField.value = user.usuario;
+        
+        senhaField.required = false;
+        senhaField.placeholder = "Deixe em branco para manter";
+        senhaHelp.style.display = 'block';
+        nivelField.value = user.nivel_acesso;
+    } else {
+        // Modo Adição
+        title.innerHTML = `<i class="fas fa-user-plus" style="color: var(--primary);"></i> Novo Usuário`;
+        idField.value = "";
+        
+        senhaField.required = true;
+        senhaField.placeholder = "••••••••";
+        senhaHelp.style.display = 'none';
+        nivelField.value = "usuario";
+    }
+    
+    modal.style.display = 'flex';
+}
+
+function closeUserModal() {
+    const modal = document.getElementById('user-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function saveUserForm(event) {
+    event.preventDefault();
+    
+    const id = document.getElementById('user-id-field').value;
+    const nome = document.getElementById('user-nome-field').value;
+    const email = document.getElementById('user-email-field').value;
+    const senha = document.getElementById('user-senha-field').value;
+    const nivel_acesso = document.getElementById('user-nivel-field').value;
+    
+    const payload = { nome, usuario: email, nivel_acesso };
+    if (senha) payload.senha = senha;
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        
+        let res;
+        if (id) {
+            // Edição
+            res = await fetch(`/api/admin/usuarios/${id}`, {
+                method: 'PUT',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session?.access_token}`
+                },
+                body: JSON.stringify(payload)
+            });
+        } else {
+            // Criação
+            res = await fetch('/api/admin/usuarios', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session?.access_token}`
+                },
+                body: JSON.stringify(payload)
+            });
+            
+            // Auto-signup do usuário no Supabase Auth para que consiga logar
+            if (res.ok) {
+                try {
+                    await supabaseClient.auth.signUp({ email, password: senha });
+                } catch (errSupabase) {
+                    console.warn("Aviso Supabase SignUp:", errSupabase);
+                }
+            }
+        }
+        
+        if (res.ok) {
+            showToast("Usuário salvo com sucesso!");
+            closeUserModal();
+            loadUsers();
+        } else {
+            const errData = await res.json();
+            showToast("Erro: " + (errData.detail || "Não foi possível salvar o usuário"), "error");
+        }
+    } catch (err) {
+        showToast("Erro de conexão com o servidor.", "error");
+    }
+}
+
+async function deleteUser(userId) {
+    if (!confirm("Tem certeza que deseja excluir este usuário?")) {
+        return;
+    }
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch(`/api/admin/usuarios/${userId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        });
+        
+        if (res.ok) {
+            showToast("Usuário excluído com sucesso!");
+            loadUsers();
+        } else {
+            showToast("Erro ao excluir usuário.", "error");
+        }
+    } catch (err) {
+        showToast("Erro de conexão.", "error");
+    }
 }
 
 initSupabase();
