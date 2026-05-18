@@ -34,6 +34,7 @@ function setupEventListeners() {
     if (loginForm) {
         loginForm.onsubmit = async (e) => {
             e.preventDefault();
+            localStorage.removeItem('active_view');
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
             const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
@@ -41,7 +42,14 @@ function setupEventListeners() {
         };
     }
     const logoutBtn = document.getElementById('logout-btn');
-    if (logoutBtn) logoutBtn.onclick = async () => { await supabaseClient.auth.signOut(); location.reload(); };
+    if (logoutBtn) {
+        logoutBtn.onclick = async () => { 
+            localStorage.removeItem('active_view'); 
+            localStorage.removeItem('gas_draft');
+            await supabaseClient.auth.signOut(); 
+            location.reload(); 
+        };
+    }
 
     const clientDoc = document.getElementById('client-doc');
     if (clientDoc) {
