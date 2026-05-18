@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SS Gas Control - Servsolda</title>
+    <link rel="icon" type="image/png" href="assets/logo/SERVSOLDAPNG.png">
+    <link rel="apple-touch-icon" href="assets/logo/SERVSOLDAPNG.png">
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -14,15 +16,11 @@
         <!-- Header -->
         <header id="main-header" style="display: none;">
             <div class="container">
-                <div class="logo">
-                    <img src="/assets/logo/SERVSOLDAPNG.png" alt="Servsolda Logo" class="logo-img">
+                <div class="logo" style="cursor: pointer;" onclick="showView('home-view')">
+                    <img src="assets/logo/SERVSOLDAPNG.png" alt="Servsolda Logo" class="logo-img" style="height: 45px; width: auto;">
                 </div>
-                <nav id="nav-menu" style="display: flex; gap: 1rem;">
-                    <button class="btn btn-outline nav-link active" onclick="showView('driver-view')">Motorista</button>
-                    <button class="btn btn-outline nav-link" id="admin-nav-btn" style="display: none;" onclick="showView('admin-view')">Admin</button>
-                </nav>
                 <div class="user-menu" style="display: flex; align-items: center; gap: 1rem;">
-                    <span id="user-name">Usuário</span>
+                    <span id="user-display-name" class="hide-mobile" style="font-weight: 600; color: var(--dark);">Motorista</span>
                     <button id="logout-btn" class="btn btn-outline" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">
                         <i class="fas fa-sign-out-alt"></i> Sair
                     </button>
@@ -34,7 +32,7 @@
             <!-- Login View -->
             <section id="login-view" class="view active">
                 <div class="login-card">
-                    <img src="/assets/logo/SERVSOLDAPNG.png" alt="Servsolda Logo" style="width: 150px; margin-bottom: 2rem;">
+                    <img src="assets/logo/SERVSOLDAPNG.png" alt="Servsolda Logo" style="width: 220px; height: auto; margin-bottom: 2rem;">
                     <h1>SS Gas Control</h1>
                     <form id="login-form">
                         <div class="form-group">
@@ -49,83 +47,150 @@
                             Entrar <i class="fas fa-arrow-right"></i>
                         </button>
                     </form>
-                    <div id="login-error" style="color: var(--danger); margin-top: 1rem; font-size: 0.9rem; display: none;"></div>
+                </div>
+            </section>
+
+            <!-- Home View -->
+            <section id="home-view" class="view">
+                <div class="hero-section">
+                    <h1>Olá, <span id="user-display-name-hero">Motorista</span></h1>
+                    <p>O que você deseja fazer hoje?</p>
+                </div>
+                
+                <div class="hero-grid">
+                    <div class="hero-card" onclick="showView('driver-view')">
+                        <div class="hero-icon" style="background: var(--primary-light); color: var(--primary);">
+                            <i class="fas fa-truck-loading"></i>
+                        </div>
+                        <h3>Registrar Entrega</h3>
+                        <p>Inicie o registro de cilindros entregues.</p>
+                    </div>
+                    
+                    <div class="hero-card" onclick="showView('history-view')">
+                        <div class="hero-icon" style="background: #e3f2fd; color: #1976d2;">
+                            <i class="fas fa-history"></i>
+                        </div>
+                        <h3>Consultar Histórico</h3>
+                        <p>Veja entregas anteriores e comprovantes.</p>
+                    </div>
+
+                    <div class="hero-card" onclick="showView('clients-view')">
+                        <div class="hero-icon" style="background: #fff3e0; color: #f57c00;">
+                            <i class="fas fa-map-marker-alt"></i>
+                        </div>
+                        <h3>Localização</h3>
+                        <p>Busque clientes e trace rotas via GPS.</p>
+                    </div>
+
+                    <div id="admin-card" class="hero-card" onclick="showView('admin-view')" style="display: none;">
+                        <div class="hero-icon" style="background: #fce4ec; color: #c2185b;">
+                            <i class="fas fa-cog"></i>
+                        </div>
+                        <h3>Administração</h3>
+                        <p>Gerencie usuários do sistema.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Localização View -->
+            <section id="clients-view" class="view">
+                <div class="header-action">
+                    <button class="btn btn-outline" onclick="showView('home-view')" style="margin-bottom: 1rem; padding: 0.4rem 0.8rem;">
+                        <i class="fas fa-arrow-left"></i> Voltar
+                    </button>
+                    <h2>Buscar Localização</h2>
+                </div>
+                <div class="card" style="margin-top: 1rem;">
+                    <div class="form-group">
+                        <input type="text" id="client-search" class="form-control" placeholder="Buscar por Nome ou CPF/CNPJ..." onkeyup="filterClientsList()">
+                    </div>
+                    <div id="clients-list-container" class="list-container">
+                        <p style="text-align: center; color: #666; padding: 2rem;">Carregando...</p>
+                    </div>
                 </div>
             </section>
 
             <!-- Driver View -->
             <section id="driver-view" class="view">
                 <div class="header-action">
+                    <button class="btn btn-outline" onclick="showView('home-view')" style="margin-bottom: 1rem; padding: 0.4rem 0.8rem;">
+                        <i class="fas fa-arrow-left"></i> Voltar
+                    </button>
                     <h2>Nova Entrega</h2>
-                    <p>Registre a entrega dos cilindros abaixo.</p>
                 </div>
-
-                <div class="card" style="margin-top: 1.5rem;">
+                <div class="card" style="margin-top: 1rem;">
                     <form id="delivery-form">
                         <div class="form-group">
                             <label>CNPJ ou CPF do Cliente</label>
-                            <div style="display: flex; gap: 0.5rem;">
-                                <input type="text" id="client-doc" class="form-control" placeholder="00.000.000/0000-00">
-                                <button type="button" id="search-client" class="btn btn-outline">
-                                    <i class="fas fa-search"></i>
-                                </button>
-                            </div>
-                            <div id="client-info" style="margin-top: 0.5rem; font-weight: 600; color: var(--primary); display: none;"></div>
+                            <input type="text" id="client-doc" class="form-control" placeholder="00.000.000/0000-00">
                         </div>
-
                         <div class="form-group">
-                            <label>Número do Documento (NF/Pedido)</label>
-                            <input type="text" id="doc-number" class="form-control" placeholder="Ex: 12345">
+                            <label>Nome do Cliente</label>
+                            <input type="text" id="client-name" class="form-control" placeholder="Preenchimento automático...">
                         </div>
-
-                        <div id="items-container">
-                            <!-- Items will be added here -->
+                        <div class="form-group">
+                            <label>Número da NF / Documento</label>
+                            <input type="text" id="doc-number" class="form-control" required>
                         </div>
-
-                        <button type="button" id="add-item" class="btn btn-outline" style="width: 100%; margin-bottom: 1.5rem;">
+                        <div id="items-container"></div>
+                        <button type="button" id="add-item" class="btn btn-outline" style="width: 100%; margin-bottom: 1rem;">
                             <i class="fas fa-plus"></i> Adicionar Cilindro
                         </button>
-
                         <button type="submit" class="btn btn-primary" style="width: 100%;">
-                            Finalizar Entrega <i class="fas fa-check"></i>
+                            Finalizar e Enviar <i class="fas fa-paper-plane"></i>
                         </button>
                     </form>
                 </div>
             </section>
 
+            <!-- History View -->
+            <section id="history-view" class="view">
+                <div class="header-action">
+                    <button class="btn btn-outline" onclick="showView('home-view')" style="margin-bottom: 1rem; padding: 0.4rem 0.8rem;">
+                        <i class="fas fa-arrow-left"></i> Voltar
+                    </button>
+                    <h2>Histórico</h2>
+                </div>
+                <div class="card" style="margin-top: 1rem;">
+                    <div class="filter-grid" style="margin-bottom: 1rem;">
+                        <input type="date" id="filter-start" class="form-control">
+                        <input type="date" id="filter-end" class="form-control">
+                        <input type="text" id="filter-search" class="form-control" style="grid-column: span 2;" placeholder="Buscar por Nome ou Documento..." onkeyup="loadHistory()">
+                    </div>
+                    <div id="history-results"></div>
+                </div>
+            </section>
+
             <!-- Admin View -->
             <section id="admin-view" class="view">
-                <div class="header-action" style="display: flex; justify-content: space-between; align-items: center;">
-                    <h2>Painel Administrativo</h2>
-                    <button id="refresh-data" class="btn btn-outline">
-                        <i class="fas fa-sync"></i> Atualizar
+                <div class="header-action">
+                    <button class="btn btn-outline" onclick="showView('home-view')" style="padding: 0.4rem 0.8rem;">
+                        <i class="fas fa-arrow-left"></i> Voltar
                     </button>
                 </div>
-
-                <div class="grid">
-                    <div class="card">
-                        <h3>Últimas Entregas</h3>
-                        <div id="history-list" style="margin-top: 1rem;">
-                            <p>Carregando histórico...</p>
-                        </div>
-                    </div>
-                    
-                    <div class="card">
-                        <h3>Gestão de Usuários</h3>
-                        <div id="user-list" style="margin-top: 1rem;">
-                            <p>Carregando usuários...</p>
-                        </div>
-                        <button id="add-user-btn" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">
-                            Novo Usuário
-                        </button>
-                    </div>
+                <div class="card" style="margin-top: 1rem;">
+                    <h3>Gestão de Usuários</h3>
+                    <div id="user-list"></div>
                 </div>
             </section>
         </main>
     </div>
 
-    <!-- Scripts -->
+    <!-- Confirm Modal -->
+    <div id="confirm-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content" style="text-align: center;">
+            <h3 id="confirm-title">Confirmar</h3>
+            <p id="confirm-message" style="margin: 1rem 0; color: #666;"></p>
+            <div style="display: flex; gap: 1rem;">
+                <button id="confirm-cancel" class="btn btn-outline" style="flex: 1;">Cancelar</button>
+                <button id="confirm-ok" class="btn btn-primary" style="flex: 1;">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js"></script>
+    <script src="app.js?v=1.1"></script>
 </body>
 </html>

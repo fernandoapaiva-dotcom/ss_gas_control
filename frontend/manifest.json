@@ -1,19 +1,20 @@
 {
-  "name": "SS Gas Control Servsolda",
+  "name": "SS Gas Control",
   "short_name": "SS Gas",
-  "description": "Sistema de Controle de Gás Servsolda",
+  "description": "Sistema de Controle de Entregas de Gás - Servsolda",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#28a745",
+  "theme_color": "#2e7d32",
   "icons": [
     {
-      "src": "/assets/logo/SERVSOLDAPNG.png",
+      "src": "assets/logo/SERVSOLDAPNG.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
-      "src": "/assets/logo/SERVSOLDAPNG.png",
+      "src": "assets/logo/SERVSOLDAPNG.png",
       "sizes": "512x512",
       "type": "image/png"
     }
