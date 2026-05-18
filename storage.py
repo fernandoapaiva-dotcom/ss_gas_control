@@ -97,6 +97,18 @@ def upload_file_to_drive(file_path, client_name, invoice_number, date_obj=None):
         ).execute()
         
         print(f"[RASTREIO] UPLOAD CONCLUÍDO! ID: {file.get('id')}")
+        
+        # Define a permissão do arquivo como pública ("anyone with the link can view") para evitar telas de solicitação de acesso
+        try:
+            print(f"[RASTREIO] Tornando o arquivo acessível por link público...")
+            service.permissions().create(
+                fileId=file.get('id'),
+                body={'type': 'anyone', 'role': 'reader'}
+            ).execute()
+            print(f"[RASTREIO] Permissão pública aplicada com sucesso!")
+        except Exception as perm_err:
+            print(f"[RASTREIO] Erro não fatal ao aplicar permissão pública: {str(perm_err)}")
+            
         return file.get('webContentLink') or file.get('webViewLink')
         
     except Exception as e:
