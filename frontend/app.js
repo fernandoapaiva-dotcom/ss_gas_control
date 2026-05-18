@@ -219,9 +219,9 @@ async function loadHistory() {
                             <p style="font-size:0.85rem; font-weight:600; color:var(--dark); margin-bottom:8px;">Comprovantes:</p>
                             <div style="display:flex; gap:8px; flex-wrap:wrap;">
                                 ${item.fotos.map((link, idx) => `
-                                    <a href="${link}" target="_blank" class="btn btn-outline" style="font-size:0.7rem; padding:6px 12px; background:#fff;">
+                                    <button type="button" onclick="event.stopPropagation(); openImageViewer('${link}', ${idx + 1})" class="btn btn-outline" style="font-size:0.7rem; padding:6px 12px; background:#fff; width:auto; display:inline-flex;">
                                         <i class="fas fa-image"></i> Foto ${idx + 1}
-                                    </a>
+                                    </button>
                                 `).join('')}
                             </div>
                         </div>
@@ -310,6 +310,41 @@ function restoreDraft() {
             if (data.items) data.items.forEach(item => addItem(item));
         } catch (e) { console.error("Erro restore draft:", e); }
     }
+}
+
+// Image Viewer Modal Functions
+function openImageViewer(link, index) {
+    const modal = document.getElementById('image-viewer-modal');
+    const img = document.getElementById('viewer-img');
+    const downloadBtn = document.getElementById('viewer-download');
+    
+    if (modal && img && downloadBtn) {
+        img.src = getDisplayUrl(link);
+        downloadBtn.href = link;
+        modal.style.display = 'flex';
+    }
+}
+
+function closeImageViewer() {
+    const modal = document.getElementById('image-viewer-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+function getDisplayUrl(driveUrl) {
+    if (!driveUrl) return "";
+    try {
+        const urlObj = new URL(driveUrl);
+        const fileId = urlObj.searchParams.get("id");
+        if (fileId) {
+            // Retorna o thumbnail otimizado em alta definição direto do Google Drive
+            return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+        }
+    } catch (e) {
+        console.error("Erro ao converter URL:", e);
+    }
+    return driveUrl;
 }
 
 initSupabase();
