@@ -56,16 +56,17 @@ async def criar_entrega(
 
     entrega = Entrega(
         numero_documento=data.get('numero_documento'),
+        nome_cliente=nome_cliente,  # salva direto para nunca perder
         data_entrega=datetime.fromisoformat(data.get('data_entrega').replace('Z', '')),
         tipo_entrega='motorista',
-        fk_cliente=cnpj,
+        fk_cliente=cnpj if cnpj else None,
         fk_motorista=current_user.id,
         lat=data.get('lat'),
         lng=data.get('lng')
     )
     db.add(entrega)
     db.flush()
-    print(f"[RASTREIO] Entrega {entrega.id} salva no banco local.")
+    print(f"[RASTREIO] Entrega {entrega.id} | Cliente: {nome_cliente} | CNPJ: {cnpj}")
 
     photo_urls = []
     if fotos:
@@ -119,13 +120,17 @@ async def filtrar_entregas(
     result = []
     print(f"--- [DEBUG HISTÓRICO] Encontradas {len(entregas)} entregas ---")
     for e in entregas:
-        # Pega o nome do cliente de forma garantida
-        nome = "Desconhecido"
-        if e.cliente: 
+        # Fallback em 3 níveis: 1) relação ORM, 2) lookup manual, 3) campo nome_cliente da entrega
+        nome = None
+        if e.cliente:
             nome = e.cliente.nome_razao
-        else:
+        if not nome and e.fk_cliente:
             c = db.query(Cliente).filter(Cliente.cnpj == e.fk_cliente).first()
-            if c: nome = c.nome_razao
+            if c:
+                nome = c.nome_razao
+        if not nome:
+            nome = e.nome_cliente  # campo direto salvo no registro
+        nome = nome or "Cliente Desconhecido"
         
         print(f"ID: {e.id} | Cliente: {nome} | Data: {e.data_entrega} | NF: {e.numero_documento}")
         

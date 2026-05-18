@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Text, relationship
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Text
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
@@ -25,10 +25,11 @@ class Entrega(Base):
     __tablename__ = "entregas"
     id = Column(Integer, primary_key=True, index=True)
     numero_documento = Column(String, index=True)
+    nome_cliente = Column(String, nullable=True)  # campo redundante para fallback
     data_aplicacao = Column(DateTime, default=datetime.utcnow)
     data_entrega = Column(DateTime)
     tipo_entrega = Column(String, nullable=False)
-    fk_cliente = Column(String(14), ForeignKey("clientes.cnpj"))
+    fk_cliente = Column(String(14), ForeignKey("clientes.cnpj"), nullable=True)
     fk_motorista = Column(Integer, ForeignKey("usuarios.id"))
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
