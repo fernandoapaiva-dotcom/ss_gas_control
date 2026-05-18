@@ -75,14 +75,26 @@ function handleAuthSuccess(user) {
     if (adminCard) adminCard.style.display = isAdmin ? 'flex' : 'none';
     const nameEl = document.getElementById('user-display-name');
     if (nameEl) nameEl.innerText = user.email.split('@')[0];
-    if (localStorage.getItem('gas_draft')) showView('driver-view');
-    else showView('home-view');
+    
+    // Restaurar a última tela visualizada
+    const savedView = localStorage.getItem('active_view');
+    if (savedView) {
+        showView(savedView);
+    } else if (localStorage.getItem('gas_draft')) {
+        showView('driver-view');
+    } else {
+        showView('home-view');
+    }
 }
 
 function showView(viewId) {
     document.querySelectorAll('.view').forEach(v => { v.classList.remove('active'); v.style.display = 'none'; });
     const view = document.getElementById(viewId);
     if (view) { view.classList.add('active'); view.style.display = 'block'; }
+    
+    // Salvar a tela atual para persistência
+    localStorage.setItem('active_view', viewId);
+    
     if (viewId === 'history-view') loadHistory();
     if (viewId === 'clients-view') loadClients();
 }
@@ -267,10 +279,32 @@ function renderClientsList(clients) {
     const container = document.getElementById('clients-list-container');
     if (!container) return;
     container.innerHTML = clients.map(c => `
-        <div class="list-item" style="padding:12px; border-bottom:1px solid #eee; background:white; margin-bottom:8px; border-radius:10px; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
-            <h4 style="margin:0; font-size:0.9rem; color:var(--dark);">${c.nome_razao || "Sem Nome"}</h4>
-            <p style="font-size:0.75rem; color:#666; margin:4px 0;">${c.cnpj || "S/CNPJ"}</p>
-            ${c.lat ? `<a href="https://maps.google.com/?q=${c.lat},${c.lng}" target="_blank" class="btn btn-primary" style="font-size:0.7rem; padding:6px 12px; margin-top:8px; width:auto; display:inline-flex;">Abrir no Maps</a>` : ''}
+        <div class="list-item" style="padding:12px; border-bottom:1px solid #eee; background:white; margin-bottom:12px; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.05); border-left:4px solid var(--primary);">
+            <h4 style="margin:0; font-size:0.95rem; color:var(--dark);">${c.nome_razao || "Sem Nome"}</h4>
+            <p style="font-size:0.8rem; color:#666; margin:4px 0;"><i class="fas fa-id-card"></i> ${c.cnpj || "S/CNPJ"}</p>
+            ${c.lat ? `
+                <div style="margin-top: 10px; border-radius: 8px; overflow: hidden; border: 1px solid #eee; position: relative; height: 130px;">
+                    <iframe 
+                        width="100%" 
+                        height="130" 
+                        frameborder="0" 
+                        scrolling="no" 
+                        marginheight="0" 
+                        marginwidth="0" 
+                        src="https://www.openstreetmap.org/export/embed.html?bbox=${parseFloat(c.lng)-0.0015}%2C${parseFloat(c.lat)-0.0015}%2C${parseFloat(c.lng)+0.0015}%2C${parseFloat(c.lat)+0.0015}&layer=mapnik&marker=${c.lat}%2C${c.lng}"
+                        style="border: 0; pointer-events: none;">
+                    </iframe>
+                    <div onclick="openRouteModal('${c.lat}', '${c.lng}', '${c.nome_razao.replace(/'/g, "\\'")}')" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.05); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;">
+                        <span class="btn btn-primary" style="font-size: 0.75rem; padding: 6px 14px; box-shadow: 0 4px 8px rgba(0,0,0,0.15); width: auto;">
+                            <i class="fas fa-route"></i> Trace Rota
+                        </span>
+                    </div>
+                </div>
+            ` : `
+                <p style="font-size:0.75rem; color:#999; margin-top:8px; font-style:italic;">
+                    <i class="fas fa-map-marker-alt"></i> Localização não registrada para este cliente.
+                </p>
+            `}
         </div>
     `).join('') || '<p style="text-align:center; padding:2rem; color:#999;">Nenhum cliente cadastrado.</p>';
 }
@@ -374,6 +408,25 @@ function getDisplayUrl(driveUrl) {
         console.error("Erro ao converter URL:", e);
     }
     return driveUrl;
+}
+
+function openRouteModal(lat, lng, clientName) {
+    const modal = document.getElementById('route-modal');
+    const gmapsLink = document.getElementById('route-google-maps');
+    const wazeLink = document.getElementById('route-waze');
+    
+    if (modal && gmapsLink && wazeLink) {
+        gmapsLink.href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+        wazeLink.href = `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
+        modal.style.display = 'flex';
+    }
+}
+
+function closeRouteModal() {
+    const modal = document.getElementById('route-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
 }
 
 initSupabase();
