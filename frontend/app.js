@@ -278,40 +278,67 @@ async function loadClients() {
 function renderClientsList(clients) {
     const container = document.getElementById('clients-list-container');
     if (!container) return;
-    container.innerHTML = clients.map(c => `
-        <div class="list-item" style="padding:12px; border-bottom:1px solid #eee; background:white; margin-bottom:12px; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.05); border-left:4px solid var(--primary);">
-            <h4 style="margin:0; font-size:0.95rem; color:var(--dark);">${c.nome_razao || "Sem Nome"}</h4>
-            <p style="font-size:0.8rem; color:#666; margin:4px 0;"><i class="fas fa-id-card"></i> ${c.cnpj || "S/CNPJ"}</p>
-            ${c.lat ? `
-                <div style="margin-top: 10px; border-radius: 8px; overflow: hidden; border: 1px solid #eee; position: relative; height: 130px;">
-                    <iframe 
-                        width="100%" 
-                        height="130" 
-                        frameborder="0" 
-                        scrolling="no" 
-                        marginheight="0" 
-                        marginwidth="0" 
-                        src="https://www.openstreetmap.org/export/embed.html?bbox=${parseFloat(c.lng)-0.0015}%2C${parseFloat(c.lat)-0.0015}%2C${parseFloat(c.lng)+0.0015}%2C${parseFloat(c.lat)+0.0015}&layer=mapnik&marker=${c.lat}%2C${c.lng}"
-                        style="border: 0; pointer-events: none;">
-                    </iframe>
-                    <div onclick="openRouteModal('${c.lat}', '${c.lng}', '${c.nome_razao.replace(/'/g, "\\'")}')" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.05); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;">
-                        <span class="btn btn-primary" style="font-size: 0.75rem; padding: 6px 14px; box-shadow: 0 4px 8px rgba(0,0,0,0.15); width: auto;">
-                            <i class="fas fa-route"></i> Trace Rota
-                        </span>
+    
+    // Configura o contêiner para usar Grid Layout responsivo
+    container.style.display = 'grid';
+    container.style.gridTemplateColumns = 'repeat(auto-fill, minmax(300px, 1fr))';
+    container.style.gap = '16px';
+    container.style.padding = '8px 0';
+
+    const isAdmin = isAdminUser();
+
+    container.innerHTML = clients.map(c => {
+        const hasLocation = c.lat !== null && c.lat !== undefined && c.lat !== "";
+        
+        return `
+        <div class="list-item" style="padding: 16px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); border-top: 4px solid var(--primary); display: flex; flex-direction: column; justify-content: space-between; min-height: 220px; transition: transform 0.2s, box-shadow 0.2s; position: relative; margin-bottom: 0;">
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+                    <h4 style="margin: 0 0 6px 0; font-size: 0.95rem; color: var(--dark); line-height: 1.3; font-weight: 700; word-break: break-word; flex: 1;">${c.nome_razao || "Sem Nome"}</h4>
+                    ${isAdmin && hasLocation ? `
+                        <button onclick="deleteClientLocation('${c.cnpj}')" class="btn btn-outline" style="border: none; color: var(--danger); padding: 4px 8px; width: auto; font-size: 0.9rem; background: transparent; cursor: pointer; display: inline-flex;" title="Excluir Localização">
+                            <i class="far fa-trash-alt"></i>
+                        </button>
+                    ` : ''}
+                </div>
+                <p style="font-size: 0.8rem; color: #777; margin: 0 0 12px 0; display: flex; align-items: center; gap: 5px;">
+                    <i class="fas fa-id-card" style="color: #bbb;"></i> ${c.cnpj || "Sem CNPJ"}
+                </p>
+            </div>
+            
+            <div style="margin-top: auto;">
+                ${hasLocation ? `
+                    <div style="border-radius: 8px; overflow: hidden; border: 1px solid #eee; position: relative; height: 120px;">
+                        <iframe 
+                            width="100%" 
+                            height="120" 
+                            frameborder="0" 
+                            scrolling="no" 
+                            marginheight="0" 
+                            marginwidth="0" 
+                            src="https://www.openstreetmap.org/export/embed.html?bbox=${parseFloat(c.lng)-0.0015}%2C${parseFloat(c.lat)-0.0015}%2C${parseFloat(c.lng)+0.0015}%2C${parseFloat(c.lat)+0.0015}&layer=mapnik&marker=${c.lat}%2C${c.lng}"
+                            style="border: 0; pointer-events: none;">
+                        </iframe>
+                        <div onclick="openRouteModal('${c.lat}', '${c.lng}', '${c.nome_razao.replace(/'/g, "\\'")}')" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.05); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;">
+                            <span class="btn btn-primary" style="font-size: 0.75rem; padding: 6px 14px; box-shadow: 0 4px 8px rgba(0,0,0,0.15); width: auto;">
+                                <i class="fas fa-route"></i> Trace Rota
+                            </span>
+                        </div>
                     </div>
-                </div>
-            ` : `
-                <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
-                    <p style="font-size:0.75rem; color:#999; margin: 4px 0; font-style:italic; display: flex; align-items: center; gap: 5px;">
-                        <i class="fas fa-map-marker-alt" style="color: var(--danger);"></i> Localização não registrada para este cliente.
-                    </p>
-                    <button type="button" onclick="registerClientLocation('${c.cnpj}')" class="btn btn-outline" style="font-size:0.75rem; padding:8px 12px; width:100%; border-color: var(--primary); color: var(--primary); display: flex; align-items: center; justify-content: center; gap: 6px; background: #fff;">
-                        <i class="fas fa-map-pin"></i> Registrar Localização do Cliente
-                    </button>
-                </div>
-            `}
+                ` : `
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <p style="font-size: 0.75rem; color: #999; margin: 4px 0; font-style: italic; display: flex; align-items: center; gap: 5px;">
+                            <i class="fas fa-map-marker-alt" style="color: var(--danger);"></i> Sem localização registrada
+                        </p>
+                        <button type="button" onclick="registerClientLocation('${c.cnpj}')" class="btn btn-outline" style="font-size: 0.75rem; padding: 8px 12px; width: 100%; border-color: var(--primary); color: var(--primary); display: flex; align-items: center; justify-content: center; gap: 6px; background: #fff; border-radius: 8px; font-weight: 600;">
+                            <i class="fas fa-map-pin"></i> Registrar Localização
+                        </button>
+                    </div>
+                `}
+            </div>
         </div>
-    `).join('') || '<p style="text-align:center; padding:2rem; color:#999;">Nenhum cliente cadastrado.</p>';
+        `;
+    }).join('') || '<p style="text-align:center; padding:2rem; color:#999; grid-column: 1 / -1;">Nenhum cliente cadastrado.</p>';
 }
 
 function filterClientsList() {
@@ -490,6 +517,37 @@ function registerClientLocation(cnpj) {
         },
         { timeout: 7000, enableHighAccuracy: true }
     );
+}
+
+async function deleteClientLocation(cnpj) {
+    if (!confirm("Tem certeza que deseja excluir a localização registrada deste cliente?")) {
+        return;
+    }
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch('/api/clientes/localizacao', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session?.access_token}`
+            },
+            body: JSON.stringify({ cnpj, lat: null, lng: null })
+        });
+        
+        if (res.ok) {
+            showToast("Localização excluída com sucesso!");
+            loadClients(); // Atualiza a lista
+        } else {
+            showToast("Erro ao excluir. Tente novamente.", "error");
+        }
+    } catch (err) {
+        showToast("Erro de conexão.", "error");
+    }
+}
+
+function isAdminUser() {
+    return currentUser && (currentUser.email.includes('admin') || currentUser.email === 'comercial@servweld.com.br');
 }
 
 initSupabase();

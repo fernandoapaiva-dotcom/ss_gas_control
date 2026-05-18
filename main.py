@@ -73,8 +73,8 @@ async def update_cliente_localizacao(
     lat = payload.get("lat")
     lng = payload.get("lng")
     
-    if not cnpj or lat is None or lng is None:
-        raise HTTPException(status_code=400, detail="CNPJ, latitude e longitude são obrigatórios")
+    if not cnpj:
+        raise HTTPException(status_code=400, detail="CNPJ é obrigatório")
         
     cliente = db.query(Cliente).filter(Cliente.cnpj == cnpj).first()
     if not cliente:
