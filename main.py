@@ -63,6 +63,28 @@ async def list_clientes(db: Session = Depends(get_db)):
     clientes = db.query(Cliente).all()
     return [{"cnpj": c.cnpj, "nome_razao": c.nome_razao, "lat": c.lat, "lng": c.lng} for c in clientes]
 
+@app.post("/api/clientes/localizacao")
+async def update_cliente_localizacao(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    cnpj = payload.get("cnpj")
+    lat = payload.get("lat")
+    lng = payload.get("lng")
+    
+    if not cnpj or lat is None or lng is None:
+        raise HTTPException(status_code=400, detail="CNPJ, latitude e longitude são obrigatórios")
+        
+    cliente = db.query(Cliente).filter(Cliente.cnpj == cnpj).first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+        
+    cliente.lat = lat
+    cliente.lng = lng
+    db.commit()
+    return {"status": "success", "lat": lat, "lng": lng}
+
 @app.get("/api/cnpj/{documento}")
 async def focus_cnpj(documento: str, db: Session = Depends(get_db)):
     print(f"[RASTREIO] Buscando CNPJ: {documento}")

@@ -301,9 +301,14 @@ function renderClientsList(clients) {
                     </div>
                 </div>
             ` : `
-                <p style="font-size:0.75rem; color:#999; margin-top:8px; font-style:italic;">
-                    <i class="fas fa-map-marker-alt"></i> Localização não registrada para este cliente.
-                </p>
+                <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+                    <p style="font-size:0.75rem; color:#999; margin: 4px 0; font-style:italic; display: flex; align-items: center; gap: 5px;">
+                        <i class="fas fa-map-marker-alt" style="color: var(--danger);"></i> Localização não registrada para este cliente.
+                    </p>
+                    <button type="button" onclick="registerClientLocation('${c.cnpj}')" class="btn btn-outline" style="font-size:0.75rem; padding:8px 12px; width:100%; border-color: var(--primary); color: var(--primary); display: flex; align-items: center; justify-content: center; gap: 6px; background: #fff;">
+                        <i class="fas fa-map-pin"></i> Registrar Localização do Cliente
+                    </button>
+                </div>
             `}
         </div>
     `).join('') || '<p style="text-align:center; padding:2rem; color:#999;">Nenhum cliente cadastrado.</p>';
@@ -427,6 +432,64 @@ function closeRouteModal() {
     if (modal) {
         modal.style.display = 'none';
     }
+}
+
+function registerClientLocation(cnpj) {
+    if (!navigator.geolocation) {
+        showToast("Seu dispositivo não suporta Geolocalização.", "error");
+        return;
+    }
+    
+    // Mostra um spinner de carregamento no botão
+    const btn = event?.target?.closest('button');
+    let originalHtml = "";
+    if (btn) {
+        originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Obtendo GPS...';
+    }
+    
+    navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            
+            try {
+                const { data: { session } } = await supabaseClient.auth.getSession();
+                const res = await fetch('/api/clientes/localizacao', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${session?.access_token}`
+                    },
+                    body: JSON.stringify({ cnpj, lat, lng })
+                });
+                
+                if (res.ok) {
+                    showToast("Localização salva com sucesso!");
+                    loadClients(); // Atualiza a lista
+                } else {
+                    const errData = await res.json();
+                    showToast("Erro ao salvar: " + (errData.detail || "Tente novamente"), "error");
+                }
+            } catch (err) {
+                showToast("Erro de conexão.", "error");
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
+                }
+            }
+        },
+        (err) => {
+            showToast("Erro ao obter GPS. Certifique-se de que a localização está ativada.", "error");
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
+        },
+        { timeout: 7000, enableHighAccuracy: true }
+    );
 }
 
 initSupabase();
