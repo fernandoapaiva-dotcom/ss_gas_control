@@ -219,7 +219,7 @@ async function loadHistory() {
                             <p style="font-size:0.85rem; font-weight:600; color:var(--dark); margin-bottom:8px;">Comprovantes:</p>
                             <div style="display:flex; gap:8px; flex-wrap:wrap;">
                                 ${item.fotos.map((link, idx) => `
-                                    <button type="button" onclick="event.stopPropagation(); openImageViewer('${link}', ${idx + 1})" class="btn btn-outline" style="font-size:0.7rem; padding:6px 12px; background:#fff; width:auto; display:inline-flex;">
+                                    <button type="button" onclick="event.stopPropagation(); openImageViewer('${link}', ${idx}, ${JSON.stringify(item.fotos).replace(/"/g, '&quot;')})" class="btn btn-outline" style="font-size:0.7rem; padding:6px 12px; background:#fff; width:auto; display:inline-flex;">
                                         <i class="fas fa-image"></i> Foto ${idx + 1}
                                     </button>
                                 `).join('')}
@@ -313,16 +313,45 @@ function restoreDraft() {
 }
 
 // Image Viewer Modal Functions
-function openImageViewer(link, index) {
+let currentViewerPhotos = [];
+let currentViewerIndex = 0;
+
+function openImageViewer(link, index, allPhotos = []) {
+    currentViewerPhotos = allPhotos && allPhotos.length > 0 ? allPhotos : [link];
+    currentViewerIndex = index;
+    updateViewerContent();
+}
+
+function updateViewerContent() {
     const modal = document.getElementById('image-viewer-modal');
     const img = document.getElementById('viewer-img');
     const downloadBtn = document.getElementById('viewer-download');
+    const counter = document.getElementById('viewer-counter');
+    const prevBtn = document.getElementById('viewer-prev');
+    const nextBtn = document.getElementById('viewer-next');
     
     if (modal && img && downloadBtn) {
-        img.src = getDisplayUrl(link);
-        downloadBtn.href = link;
+        const currentLink = currentViewerPhotos[currentViewerIndex];
+        img.src = getDisplayUrl(currentLink);
+        downloadBtn.href = currentLink;
+        
+        if (counter) {
+            counter.innerText = `Foto ${currentViewerIndex + 1} de ${currentViewerPhotos.length}`;
+        }
+        
+        // Exibe ou oculta setas de navegação
+        const showNav = currentViewerPhotos.length > 1;
+        if (prevBtn) prevBtn.style.display = showNav ? 'flex' : 'none';
+        if (nextBtn) nextBtn.style.display = showNav ? 'flex' : 'none';
+        
         modal.style.display = 'flex';
     }
+}
+
+function navigateViewer(direction) {
+    if (currentViewerPhotos.length <= 1) return;
+    currentViewerIndex = (currentViewerIndex + direction + currentViewerPhotos.length) % currentViewerPhotos.length;
+    updateViewerContent();
 }
 
 function closeImageViewer() {
