@@ -326,18 +326,7 @@ function addItem(data = null) {
         <input type="text" class="form-control cil-obs" placeholder="Observa\u00e7\u00e3o..." style="margin-top:0.5rem;" value="${data?data.obs:''}" oninput="saveDraft()">
         <div id="photos-${id}" style="display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin-top:5px;"></div>
         
-        <!-- INPUT DE CAMERA: embutido diretamente no HTML para iOS/Android respeitar capture=environment -->
-        <button type="button" class="btn btn-outline" style="width:100%; margin-top:5px; font-size:0.8rem; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="document.getElementById('photo-input-${id}').click()">
-            <i class="fas fa-camera"></i> Adicionar Foto
-        </button>
-        <input 
-            type="file" 
-            id="photo-input-${id}" 
-            accept="image/*" 
-            capture="environment"
-            style="position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; pointer-events:none;"
-            onchange="handlePhotoSelected(event, ${id})"
-        >
+        <button type="button" class="btn btn-outline" style="width:100%; margin-top:5px; font-size:0.8rem;" onclick="addPhoto(${id})">Adicionar Foto</button>
     `;
     container.appendChild(div);
     if (data) { div.querySelector('[name="tipo_gas"]').value = data.tipo_gas; div.querySelector('[name="tamanho_gas"]').value = data.tamanho_gas; }
@@ -382,91 +371,94 @@ function compressImage(file, maxWidth, maxHeight, quality) {
     });
 }
 
-async function handlePhotoSelected(e, id) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const photoId = 'photo-' + Date.now();
-    const container = document.getElementById(`photos-${id}`);
+function addPhoto(id) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.setAttribute('capture', 'environment');
+    input.capture = 'environment';
     
-    const photoDiv = document.createElement('div');
-    photoDiv.id = photoId;
-    photoDiv.className = 'photo-preview-container';
-    photoDiv.style = "position: relative; width: 100%; height: 80px; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.1);";
-    
-    const img = document.createElement('img');
-    img.style = "width: 100%; height: 100%; object-fit: cover;";
-    
-    const loader = document.createElement('div');
-    loader.className = 'photo-loader';
-    loader.style = "position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; color: white; font-size: 0.8rem;";
-    loader.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-    
-    photoDiv.appendChild(img);
-    photoDiv.appendChild(loader);
-    container.appendChild(photoDiv);
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
 
-    // Previsualização instantânea na tela do motorista
-    const reader = new FileReader();
-    reader.onload = (re) => { img.src = re.target.result; };
-    reader.readAsDataURL(file);
-
-    let finalFile = file;
-    try {
-        // Comprime a imagem no próprio celular antes de enviar
-        finalFile = await compressImage(file, 1024, 1024, 0.7);
-    } catch (compressErr) {
-        console.warn("[COMPRESSÃO CLIENTE] Falha ao compactar, enviando original:", compressErr);
-    }
-
-    const formData = new FormData();
-    formData.append('foto', finalFile, file.name || 'foto.jpg');
-    
-    const clientName = document.getElementById('client-name').value || 'Cliente_Temporario';
-    const docNum = document.getElementById('doc-number').value || 'S_N';
-    formData.append('client_name', clientName);
-    formData.append('invoice_number', docNum);
-
-    try {
-        const { data: { session } } = await supabaseClient.auth.getSession();
-        const res = await fetch('/api/upload-temp-photo', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${session?.access_token}` },
-            body: formData
-        });
+        const photoId = 'photo-' + Date.now();
+        const container = document.getElementById(`photos-${id}`);
         
-        if (res.ok) {
-            const data = await res.json();
-            loader.remove();
-            
-            photoDiv.setAttribute('data-url', data.drive_url);
-            photoDiv.setAttribute('data-id', data.file_id);
-            preUploadedPhotos.push({ id: photoId, url: data.drive_url, file_id: data.file_id });
-            
-            const deleteBtn = document.createElement('button');
-            deleteBtn.type = 'button';
-            deleteBtn.style = "position: absolute; top: 4px; right: 4px; background: rgba(255,0,0,0.8); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 0.7rem; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;";
-            deleteBtn.innerHTML = '&times;';
-            deleteBtn.onclick = async (ev) => {
-                ev.stopPropagation();
-                await deleteTempPhoto(photoId, data.file_id);
-            };
-            photoDiv.appendChild(deleteBtn);
-            
-            // Limpa o valor do input para que o mesmo arquivo possa ser selecionado novamente se excluído
-            e.target.value = '';
-            
-            saveDraft();
-        } else {
-            showToast("Erro ao enviar foto para o Google Drive", "error");
-            photoDiv.remove();
-            e.target.value = '';
+        const photoDiv = document.createElement('div');
+        photoDiv.id = photoId;
+        photoDiv.className = 'photo-preview-container';
+        photoDiv.style = "position: relative; width: 100%; height: 80px; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.1);";
+        
+        const img = document.createElement('img');
+        img.style = "width: 100%; height: 100%; object-fit: cover;";
+        
+        const loader = document.createElement('div');
+        loader.className = 'photo-loader';
+        loader.style = "position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; color: white; font-size: 0.8rem;";
+        loader.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        
+        photoDiv.appendChild(img);
+        photoDiv.appendChild(loader);
+        container.appendChild(photoDiv);
+
+        // Previsualização instantânea na tela do motorista
+        const reader = new FileReader();
+        reader.onload = (re) => { img.src = re.target.result; };
+        reader.readAsDataURL(file);
+
+        let finalFile = file;
+        try {
+            // Comprime a imagem no próprio celular antes de enviar
+            finalFile = await compressImage(file, 1024, 1024, 0.7);
+        } catch (compressErr) {
+            console.warn("[COMPRESSÃO CLIENTE] Falha ao compactar, enviando original:", compressErr);
         }
-    } catch (err) {
-        showToast("Erro de conexão no upload", "error");
-        photoDiv.remove();
-        e.target.value = '';
-    }
+
+        const formData = new FormData();
+        formData.append('foto', finalFile, file.name || 'foto.jpg');
+        
+        const clientName = document.getElementById('client-name').value || 'Cliente_Temporario';
+        const docNum = document.getElementById('doc-number').value || 'S_N';
+        formData.append('client_name', clientName);
+        formData.append('invoice_number', docNum);
+
+        try {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            const res = await fetch('/api/upload-temp-photo', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${session?.access_token}` },
+                body: formData
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                loader.remove();
+                
+                photoDiv.setAttribute('data-url', data.drive_url);
+                photoDiv.setAttribute('data-id', data.file_id);
+                preUploadedPhotos.push({ id: photoId, url: data.drive_url, file_id: data.file_id });
+                
+                const deleteBtn = document.createElement('button');
+                deleteBtn.type = 'button';
+                deleteBtn.style = "position: absolute; top: 4px; right: 4px; background: rgba(255,0,0,0.8); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 0.7rem; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;";
+                deleteBtn.innerHTML = '&times;';
+                deleteBtn.onclick = async (ev) => {
+                    ev.stopPropagation();
+                    await deleteTempPhoto(photoId, data.file_id);
+                };
+                photoDiv.appendChild(deleteBtn);
+                saveDraft();
+            } else {
+                showToast("Erro ao enviar foto para o Google Drive", "error");
+                photoDiv.remove();
+            }
+        } catch (err) {
+            showToast("Erro de conexão no upload", "error");
+            photoDiv.remove();
+        }
+    };
+    input.click();
 }
 
 async function deleteTempPhoto(photoId, fileId) {
