@@ -125,21 +125,23 @@ async def send_whatsapp_receipt_background(
                     except Exception as comp_err:
                         print(f"[WHATSAPP] Aviso: n\u00e3o foi poss\u00edvel comprimir imagem {file_id}: {comp_err}")
 
-                    # CORRECAO: Evolution API v1.8.7 espera JSON com base64 PURO no campo 'media'
-                    # sem o prefixo 'data:image/jpeg;base64,' — apenas a string base64 limpa.
+                    # CORRECAO DEFINITIVA: Evolution API v1.8.7 exige o wrapper 'mediaMessage'
+                    # O payload correto usa { mediaMessage: { mediatype, caption, media, ... } }
                     encoded_string = base64.b64encode(image_bytes).decode('utf-8')
 
                     url_media = f"{EVOLUTION_API_URL.rstrip('/')}/message/sendMedia/{EVOLUTION_API_INSTANCE}"
                     payload_media = {
                         "number": raw_phone,
-                        "mediatype": "image",
-                        "mimetype": "image/jpeg",
-                        "caption": f"Comprovante de Entrega - Foto {idx + 1}",
-                        "media": encoded_string,
-                        "fileName": f"comprovante_{idx + 1}.jpg",
                         "options": {
                             "delay": 1200,
                             "presence": "composing"
+                        },
+                        "mediaMessage": {
+                            "mediatype": "image",
+                            "mimetype": "image/jpeg",
+                            "caption": f"Comprovante de Entrega - Foto {idx + 1}",
+                            "media": encoded_string,
+                            "fileName": f"comprovante_{idx + 1}.jpg"
                         }
                     }
                     res_media = await client.post(url_media, headers=headers, json=payload_media)

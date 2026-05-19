@@ -312,20 +312,33 @@ function addItem(data = null) {
         </div>
         <div class="filter-grid" style="margin-top:0.5rem;">
             <select class="form-control" name="tipo_gas" onchange="saveDraft()">
-                <option value="Oxigênio">Oxigênio</option><option value="Acetileno">Acetileno</option>
-                <option value="Argônio">Argônio</option><option value="Mistura">Mistura</option>
-                <option value="CO2">CO2</option><option value="Nitrogênio">Nitrogênio</option><option value="GLP">GLP</option>
+                <option value="Oxig\u00eanio">Oxig\u00eanio</option><option value="Acetileno">Acetileno</option>
+                <option value="Arg\u00f4nio">Arg\u00f4nio</option><option value="Mistura">Mistura</option>
+                <option value="CO2">CO2</option><option value="Nitroge\u0302nio">Nitrog\u00eanio</option><option value="GLP">GLP</option>
             </select>
             <input type="number" class="form-control" name="qtd" value="${data?data.qtd:1}" onchange="saveDraft()">
         </div>
         <select class="form-control" name="tamanho_gas" style="margin-top:0.5rem;" onchange="saveDraft()">
-            <option value="1m3">1m³</option><option value="3m3">3m³</option><option value="7m3">7m³</option>
-            <option value="10m3">10m³</option><option value="1kg">1 kg</option><option value="9kg">9 kg</option>
+            <option value="1m3">1m\u00b3</option><option value="3m3">3m\u00b3</option><option value="7m3">7m\u00b3</option>
+            <option value="10m3">10m\u00b3</option><option value="1kg">1 kg</option><option value="9kg">9 kg</option>
             <option value="13kg">13 kg</option><option value="25kg">25 kg</option><option value="45kg">45 kg</option>
         </select>
-        <input type="text" class="form-control cil-obs" placeholder="Observação..." style="margin-top:0.5rem;" value="${data?data.obs:''}" oninput="saveDraft()">
+        <input type="text" class="form-control cil-obs" placeholder="Observa\u00e7\u00e3o..." style="margin-top:0.5rem;" value="${data?data.obs:''}" oninput="saveDraft()">
         <div id="photos-${id}" style="display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin-top:5px;"></div>
-        <button type="button" class="btn btn-outline" style="width:100%; margin-top:5px; font-size:0.8rem;" onclick="addPhoto(${id})">Adicionar Foto</button>
+        
+        <!-- INPUT DE CAMERA: embutido diretamente no HTML para iOS Safari respeitar capture=environment -->
+        <!-- NAO mover para JavaScript dinamico - iOS ignora capture em inputs criados programaticamente -->
+        <label for="photo-input-${id}" class="btn btn-outline" style="width:100%; margin-top:5px; font-size:0.8rem; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+            <i class="fas fa-camera"></i> Adicionar Foto
+        </label>
+        <input 
+            type="file" 
+            id="photo-input-${id}" 
+            accept="image/*" 
+            capture="environment"
+            style="position:absolute; width:1px; height:1px; opacity:0; overflow:hidden;"
+            onchange="handlePhotoSelected(event, ${id})"
+        >
     `;
     container.appendChild(div);
     if (data) { div.querySelector('[name="tipo_gas"]').value = data.tipo_gas; div.querySelector('[name="tamanho_gas"]').value = data.tamanho_gas; }
@@ -370,125 +383,91 @@ function compressImage(file, maxWidth, maxHeight, quality) {
     });
 }
 
-function addPhoto(id) {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    // CORREÇÃO: definir capture ANTES de adicionar ao DOM, usando ambos os métodos
-    // para máxima compatibilidade (Android Chrome, iOS Safari, Samsung Internet)
-    input.setAttribute('capture', 'environment');
-    input.capture = 'environment';
-    input.style.cssText = 'position:fixed; top:-9999px; left:-9999px; opacity:0; width:1px; height:1px;';
+async function handlePhotoSelected(e, id) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const photoId = 'photo-' + Date.now();
+    const container = document.getElementById(`photos-${id}`);
     
-    input.onchange = async (e) => {
-        // CORREÇÃO: remover o input do DOM somente aqui, após o evento disparar
-        if (document.body.contains(input)) {
-            document.body.removeChild(input);
-        }
+    const photoDiv = document.createElement('div');
+    photoDiv.id = photoId;
+    photoDiv.className = 'photo-preview-container';
+    photoDiv.style = "position: relative; width: 100%; height: 80px; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.1);";
+    
+    const img = document.createElement('img');
+    img.style = "width: 100%; height: 100%; object-fit: cover;";
+    
+    const loader = document.createElement('div');
+    loader.className = 'photo-loader';
+    loader.style = "position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; color: white; font-size: 0.8rem;";
+    loader.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    
+    photoDiv.appendChild(img);
+    photoDiv.appendChild(loader);
+    container.appendChild(photoDiv);
 
-        const file = e.target.files[0];
-        if (!file) return;
+    // Previsualização instantânea na tela do motorista
+    const reader = new FileReader();
+    reader.onload = (re) => { img.src = re.target.result; };
+    reader.readAsDataURL(file);
 
-        const photoId = 'photo-' + Date.now();
-        const container = document.getElementById(`photos-${id}`);
+    let finalFile = file;
+    try {
+        // Comprime a imagem no próprio celular antes de enviar
+        finalFile = await compressImage(file, 1024, 1024, 0.7);
+    } catch (compressErr) {
+        console.warn("[COMPRESSÃO CLIENTE] Falha ao compactar, enviando original:", compressErr);
+    }
+
+    const formData = new FormData();
+    formData.append('foto', finalFile, file.name || 'foto.jpg');
+    
+    const clientName = document.getElementById('client-name').value || 'Cliente_Temporario';
+    const docNum = document.getElementById('doc-number').value || 'S_N';
+    formData.append('client_name', clientName);
+    formData.append('invoice_number', docNum);
+
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch('/api/upload-temp-photo', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${session?.access_token}` },
+            body: formData
+        });
         
-        const photoDiv = document.createElement('div');
-        photoDiv.id = photoId;
-        photoDiv.className = 'photo-preview-container';
-        photoDiv.style = "position: relative; width: 100%; height: 80px; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.1);";
-        
-        const img = document.createElement('img');
-        img.style = "width: 100%; height: 100%; object-fit: cover;";
-        
-        const loader = document.createElement('div');
-        loader.className = 'photo-loader';
-        loader.style = "position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; color: white; font-size: 0.8rem;";
-        loader.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        
-        photoDiv.appendChild(img);
-        photoDiv.appendChild(loader);
-        container.appendChild(photoDiv);
-
-        // Previsualização instantânea na tela do motorista
-        const reader = new FileReader();
-        reader.onload = (re) => { img.src = re.target.result; };
-        reader.readAsDataURL(file);
-
-        let finalFile = file;
-        try {
-            // Comprime a imagem no próprio celular antes de enviar
-            finalFile = await compressImage(file, 1024, 1024, 0.7);
-        } catch (compressErr) {
-            console.warn("[COMPRESSÃO CLIENTE] Falha ao compactar, enviando original:", compressErr);
-        }
-
-        const formData = new FormData();
-        formData.append('foto', finalFile, file.name || 'foto.jpg');
-        
-        const clientName = document.getElementById('client-name').value || 'Cliente_Temporario';
-        const docNum = document.getElementById('doc-number').value || 'S_N';
-        formData.append('client_name', clientName);
-        formData.append('invoice_number', docNum);
-
-        try {
-            const { data: { session } } = await supabaseClient.auth.getSession();
-            const res = await fetch('/api/upload-temp-photo', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${session?.access_token}` },
-                body: formData
-            });
+        if (res.ok) {
+            const data = await res.json();
+            loader.remove();
             
-            if (res.ok) {
-                const data = await res.json();
-                loader.remove();
-                
-                photoDiv.setAttribute('data-url', data.drive_url);
-                photoDiv.setAttribute('data-id', data.file_id);
-                preUploadedPhotos.push({ id: photoId, url: data.drive_url, file_id: data.file_id });
-                
-                const deleteBtn = document.createElement('button');
-                deleteBtn.type = 'button';
-                deleteBtn.style = "position: absolute; top: 4px; right: 4px; background: rgba(255,0,0,0.8); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 0.7rem; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;";
-                deleteBtn.innerHTML = '&times;';
-                deleteBtn.onclick = async (ev) => {
-                    ev.stopPropagation();
-                    await deleteTempPhoto(photoId, data.file_id);
-                };
-                photoDiv.appendChild(deleteBtn);
-                saveDraft();
-            } else {
-                showToast("Erro ao enviar foto para o Google Drive", "error");
-                photoDiv.remove();
-            }
-        } catch (err) {
-            showToast("Erro de conexão no upload", "error");
+            photoDiv.setAttribute('data-url', data.drive_url);
+            photoDiv.setAttribute('data-id', data.file_id);
+            preUploadedPhotos.push({ id: photoId, url: data.drive_url, file_id: data.file_id });
+            
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.style = "position: absolute; top: 4px; right: 4px; background: rgba(255,0,0,0.8); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 0.7rem; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;";
+            deleteBtn.innerHTML = '&times;';
+            deleteBtn.onclick = async (ev) => {
+                ev.stopPropagation();
+                await deleteTempPhoto(photoId, data.file_id);
+            };
+            photoDiv.appendChild(deleteBtn);
+            
+            // Limpa o valor do input para que o mesmo arquivo possa ser selecionado novamente se excluído
+            e.target.value = '';
+            
+            saveDraft();
+        } else {
+            showToast("Erro ao enviar foto para o Google Drive", "error");
             photoDiv.remove();
+            e.target.value = '';
         }
-    };
-
-    // CORREÇÃO: manter o input no DOM enquanto o usuário interage com a câmera
-    // Somente removemos dentro do onchange (acima). Também removemos se cancelar após 5min.
-    document.body.appendChild(input);
-    input.click();
-
-    // Cleanup de segurança: remove o input se o usuário cancelar sem escolher foto
-    const cleanupTimer = setTimeout(() => {
-        if (document.body.contains(input)) {
-            document.body.removeChild(input);
-        }
-    }, 5 * 60 * 1000);
-    
-    // Também remove ao fechar a câmera via focus na janela
-    const onWindowFocus = () => {
-        setTimeout(() => {
-            if (document.body.contains(input) && (!input.files || input.files.length === 0)) {
-                document.body.removeChild(input);
-            }
-            clearTimeout(cleanupTimer);
-            window.removeEventListener('focus', onWindowFocus);
-        }, 500);
-    };
-    window.addEventListener('focus', onWindowFocus);
+    } catch (err) {
+        showToast("Erro de conexão no upload", "error");
+        photoDiv.remove();
+        e.target.value = '';
+    }
 }
 
 async function deleteTempPhoto(photoId, fileId) {
