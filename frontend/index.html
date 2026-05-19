@@ -6,7 +6,7 @@
     <title>SS Gas Control - Servsolda</title>
     <link rel="icon" type="image/png" href="assets/logo/SERVSOLDAPNG.png">
     <link rel="apple-touch-icon" href="assets/logo/SERVSOLDAPNG.png">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=7">
     <link rel="manifest" href="manifest.json">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -20,11 +20,20 @@
                     <img src="assets/logo/SERVSOLDAPNG.png" alt="Servsolda Logo" class="logo-img" style="height: 45px; width: auto;">
                 </div>
                 <div class="user-menu" style="display: flex; align-items: center; gap: 1rem;">
+                    <span id="pending-sync-badge" class="badge animate-pulse" style="display:none; background: #e65100; color: white; padding: 0.3rem 0.7rem; border-radius: 20px; font-size: 0.75rem; font-weight: 700; cursor: pointer; align-items: center; gap: 5px;" onclick="syncPendingDeliveries()">
+                        <i class="fas fa-cloud-upload-alt"></i> <span id="pending-sync-count">0</span> pendente(s)
+                    </span>
                     <span id="user-display-name" class="hide-mobile" style="font-weight: 600; color: var(--dark);">Motorista</span>
                     <button id="logout-btn" class="btn btn-outline" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">
                         <i class="fas fa-sign-out-alt"></i> Sair
                     </button>
                 </div>
+            </div>
+            <div id="offline-bar" style="display:none; background: #e65100; color: white; text-align: center; padding: 8px; font-size: 0.85rem; font-weight: 600; box-shadow: inset 0 -2px 5px rgba(0,0,0,0.1);">
+                <i class="fas fa-wifi-slash"></i> Você está offline. As entregas serão salvas localmente e enviadas depois.
+            </div>
+            <div id="sync-bar" style="display:none; background: #2e7d32; color: white; text-align: center; padding: 8px; font-size: 0.85rem; font-weight: 600; box-shadow: inset 0 -2px 5px rgba(0,0,0,0.1);">
+                <i class="fas fa-spinner fa-spin"></i> Sincronizando entregas offline... Por favor, não feche o app.
             </div>
         </header>
 
@@ -316,6 +325,6 @@
 
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=6"></script>
+    <script src="app.js?v=7"></script>
 </body>
 </html>

@@ -95,6 +95,7 @@ async function initSupabase() {
         });
         setupEventListeners();
         restoreDraft();
+        initOfflineDB().catch(e => console.error("Erro IndexedDB:", e));
     } catch (err) { console.error("Erro init:", err); }
 }
 
@@ -415,6 +416,42 @@ function addPhoto(id) {
             console.warn("[COMPRESSÃO CLIENTE] Falha ao compactar, enviando original:", compressErr);
         }
 
+        // Se estiver offline, salva localmente em memória sem fazer requisição externa
+        if (!navigator.onLine) {
+            loader.remove();
+            
+            const localUrl = URL.createObjectURL(finalFile);
+            photoDiv.setAttribute('data-url', localUrl);
+            photoDiv.setAttribute('data-offline', 'true');
+            
+            preUploadedPhotos.push({
+                id: photoId,
+                isOffline: true,
+                blob: finalFile,
+                url: localUrl
+            });
+            
+            // Adiciona pequeno indicador visual no preview
+            const offlineIndicator = document.createElement('div');
+            offlineIndicator.style = "position: absolute; bottom: 4px; left: 4px; background: rgba(230,81,0,0.95); color: white; border-radius: 4px; padding: 2px 6px; font-size: 0.6rem; font-weight: bold; z-index: 10; display: flex; align-items: center; gap: 3px;";
+            offlineIndicator.innerHTML = '<i class="fas fa-wifi-slash"></i> Salvo Offline';
+            photoDiv.appendChild(offlineIndicator);
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.style = "position: absolute; top: 4px; right: 4px; background: rgba(255,0,0,0.8); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 0.7rem; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;";
+            deleteBtn.innerHTML = '&times;';
+            deleteBtn.onclick = (ev) => {
+                ev.stopPropagation();
+                photoDiv.remove();
+                preUploadedPhotos = preUploadedPhotos.filter(p => p.id !== photoId);
+                saveDraft();
+            };
+            photoDiv.appendChild(deleteBtn);
+            saveDraft();
+            return;
+        }
+
         const formData = new FormData();
         formData.append('foto', finalFile, file.name || 'foto.jpg');
         
@@ -499,6 +536,26 @@ async function submitDelivery(whatsappPhone = null, btn, originalText) {
             obs: card.querySelector('.cil-obs').value
         }))
     };
+    
+    // Suporte para Modo Offline se estiver sem internet ou com fotos offline pendentes
+    const hasOfflinePhotos = preUploadedPhotos.some(p => p.isOffline);
+    if (!navigator.onLine || hasOfflinePhotos) {
+        try {
+            await saveDeliveryOffline(payload, preUploadedPhotos.filter(p => p.isOffline));
+            showToast("Offline! Entrega salva no celular com sucesso.", "success");
+            localStorage.removeItem('gas_draft');
+            preUploadedPhotos = [];
+            
+            const modal = document.getElementById('whatsapp-checkout-modal');
+            if (modal) modal.style.display = 'none';
+            setTimeout(() => { location.reload(); }, 1500);
+        } catch (saveErr) {
+            console.error("Erro ao salvar offline:", saveErr);
+            showToast("Erro ao registrar entrega offline", "error");
+            btn.disabled = false; btn.innerHTML = originalText;
+        }
+        return;
+    }
     
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
@@ -1380,4 +1437,242 @@ async function resendWhatsApp(id, clientName) {
     }
 }
 
+// --- MODO OFFLINE COM INDEXEDDB E FILA DE SINCRONIZAÇÃO ---
+let offlineDB = null;
+let isSyncing = false;
+
+function initOfflineDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open('SSGasOfflineDB', 1);
+        request.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('pending_deliveries')) {
+                db.createObjectStore('pending_deliveries', { keyPath: 'id', autoIncrement: true });
+            }
+        };
+        request.onsuccess = (e) => {
+            offlineDB = e.target.result;
+            console.log("[OFFLINE] IndexedDB inicializado com sucesso.");
+            updatePendingBadge();
+            
+            // Tenta sincronizar pendências se iniciarmos online
+            if (navigator.onLine) {
+                syncPendingDeliveries();
+            }
+            resolve(offlineDB);
+        };
+        request.onerror = (e) => {
+            console.error("[OFFLINE] Falha ao inicializar IndexedDB:", e.target.error);
+            reject(e.target.error);
+        };
+    });
+}
+
+async function updatePendingBadge() {
+    const badge = document.getElementById('pending-sync-badge');
+    const countEl = document.getElementById('pending-sync-count');
+    if (!badge || !countEl) return;
+    
+    if (!offlineDB) {
+        badge.style.display = 'none';
+        return;
+    }
+    
+    try {
+        const pending = await getPendingDeliveries();
+        const count = pending.length;
+        if (count > 0) {
+            countEl.innerText = count;
+            badge.style.display = 'inline-flex';
+        } else {
+            badge.style.display = 'none';
+        }
+    } catch (err) {
+        console.error("[OFFLINE] Erro ao atualizar contador de pendências:", err);
+    }
+}
+
+function getPendingDeliveries() {
+    return new Promise((resolve, reject) => {
+        if (!offlineDB) {
+            resolve([]);
+            return;
+        }
+        const transaction = offlineDB.transaction(['pending_deliveries'], 'readonly');
+        const store = transaction.objectStore('pending_deliveries');
+        const request = store.getAll();
+        request.onsuccess = (e) => resolve(e.target.result);
+        request.onerror = (e) => reject(e.target.error);
+    });
+}
+
+function saveDeliveryOffline(payload, offlinePhotos) {
+    return new Promise((resolve, reject) => {
+        if (!offlineDB) {
+            reject(new Error("Banco offline não inicializado"));
+            return;
+        }
+        
+        const record = {
+            ...payload,
+            offline_photos: offlinePhotos.map(p => ({
+                id: p.id,
+                blob: p.blob,
+                filename: `offline_${p.id}.jpg`
+            })),
+            is_offline_pending: true,
+            created_at: new Date().toISOString()
+        };
+        
+        const transaction = offlineDB.transaction(['pending_deliveries'], 'readwrite');
+        const store = transaction.objectStore('pending_deliveries');
+        const request = store.add(record);
+        
+        request.onsuccess = () => {
+            updatePendingBadge();
+            resolve(true);
+        };
+        request.onerror = (e) => reject(e.target.error);
+    });
+}
+
+function deletePendingDelivery(id) {
+    return new Promise((resolve, reject) => {
+        if (!offlineDB) {
+            resolve(false);
+            return;
+        }
+        const transaction = offlineDB.transaction(['pending_deliveries'], 'readwrite');
+        const store = transaction.objectStore('pending_deliveries');
+        const request = store.delete(id);
+        request.onsuccess = () => {
+            updatePendingBadge();
+            resolve(true);
+        };
+        request.onerror = (e) => reject(e.target.error);
+    });
+}
+
+async function syncPendingDeliveries() {
+    if (isSyncing) return;
+    if (!navigator.onLine) {
+        showToast("Sem sinal de internet no momento.", "error");
+        return;
+    }
+    
+    if (!offlineDB) return;
+    const pending = await getPendingDeliveries();
+    if (pending.length === 0) return;
+    
+    isSyncing = true;
+    const syncBar = document.getElementById('sync-bar');
+    if (syncBar) syncBar.style.display = 'block';
+    
+    console.log(`[OFFLINE] Iniciando sincronização de ${pending.length} entrega(s)...`);
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        
+        for (const delivery of pending) {
+            console.log(`[OFFLINE] Sincronizando entrega do cliente: ${delivery.nome_cliente}`);
+            const uploadedUrls = [];
+            
+            // 1. Upload de fotos offline salvas no IndexedDB
+            if (delivery.offline_photos && delivery.offline_photos.length > 0) {
+                for (const photo of delivery.offline_photos) {
+                    try {
+                        const formData = new FormData();
+                        formData.append('foto', photo.blob, photo.filename);
+                        formData.append('client_name', delivery.nome_cliente || "Offline");
+                        formData.append('invoice_number', delivery.numero_documento || "Offline");
+                        
+                        const photoRes = await fetch('/api/upload-temp-photo', {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${session?.access_token}` },
+                            body: formData
+                        });
+                        
+                        if (photoRes.ok) {
+                            const data = await photoRes.json();
+                            if (data.drive_url) {
+                                uploadedUrls.push(data.drive_url);
+                            }
+                        } else {
+                            throw new Error("Erro no upload de foto da entrega pendente");
+                        }
+                    } catch (photoErr) {
+                        console.error("[OFFLINE] Falha ao enviar foto offline:", photoErr);
+                        throw photoErr; // Aborta para tentar na próxima oportunidade online
+                    }
+                }
+            }
+            
+            // Concatena fotos online pré-existentes (se houver) com as novas fotos enviadas agora
+            const finalUploadedUrls = [
+                ...delivery.fotos_pre_carregadas.filter(url => !url.startsWith('blob:')),
+                ...uploadedUrls
+            ];
+            
+            // 2. Enviar a entrega final para a API do Servidor
+            const finalPayload = {
+                ...delivery,
+                fotos_pre_carregadas: finalUploadedUrls
+            };
+            
+            delete finalPayload.id;
+            delete finalPayload.offline_photos;
+            delete finalPayload.is_offline_pending;
+            delete finalPayload.created_at;
+            
+            const res = await fetch('/api/entregas', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session?.access_token}`
+                },
+                body: JSON.stringify(finalPayload)
+            });
+            
+            if (res.ok) {
+                console.log(`[OFFLINE] Entrega de ${delivery.nome_cliente} sincronizada e salva com sucesso!`);
+                await deletePendingDelivery(delivery.id);
+            } else {
+                throw new Error(`Erro na API ao enviar entrega: ${res.statusText}`);
+            }
+        }
+        
+        showToast("Todas as entregas pendentes foram sincronizadas!", "success");
+    } catch (err) {
+        console.error("[OFFLINE] Falha na sincronização:", err);
+        showToast("Sincronização interrompida. Tentaremos novamente com sinal estável.", "error");
+    } finally {
+        isSyncing = false;
+        if (syncBar) syncBar.style.display = 'none';
+        updatePendingBadge();
+    }
+}
+
+// Ouvintes automáticos de rede para o PWA
+window.addEventListener('online', () => {
+    const offlineBar = document.getElementById('offline-bar');
+    if (offlineBar) offlineBar.style.display = 'none';
+    showToast("Conexão com a internet restabelecida!", "success");
+    syncPendingDeliveries();
+});
+
+window.addEventListener('offline', () => {
+    const offlineBar = document.getElementById('offline-bar');
+    if (offlineBar) offlineBar.style.display = 'block';
+    showToast("Você está desconectado. O app agora opera em modo offline.", "warning");
+});
+
+// Verifica estado de rede inicial ao carregar a página
+function checkInitialNetwork() {
+    const offlineBar = document.getElementById('offline-bar');
+    if (!navigator.onLine && offlineBar) {
+        offlineBar.style.display = 'block';
+    }
+}
+
 initSupabase();
+checkInitialNetwork();
