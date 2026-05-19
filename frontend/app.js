@@ -4,14 +4,93 @@ let currentUser = null;
 let currentCoords = null;
 let isDirty = false;
 let allClients = [];
+let preUploadedPhotos = [];
+
+function validarCPF(cpf) {
+    cpf = cpf.replace(/[^\d]+/g,'');
+    if(cpf == '' || cpf.length != 11) return false;
+    if (cpf == "00000000000" || cpf == "11111111111" || cpf == "22222222222" || 
+        cpf == "33333333333" || cpf == "44444444444" || cpf == "55555555555" || 
+        cpf == "66666666666" || cpf == "77777777777" || cpf == "88888888888" || 
+        cpf == "99999999999")
+        return false;
+    let add = 0;
+    for (let i=0; i < 9; i++) add += parseInt(cpf.charAt(i)) * (10 - i);
+    let rev = 11 - (add % 11);
+    if (rev == 10 || rev == 11) rev = 0;
+    if (rev != parseInt(cpf.charAt(9))) return false;
+    add = 0;
+    for (let i = 0; i < 10; i++) add += parseInt(cpf.charAt(i)) * (11 - i);
+    rev = 11 - (add % 11);
+    if (rev == 10 || rev == 11) rev = 0;
+    if (rev != parseInt(cpf.charAt(10))) return false;
+    return true;
+}
+
+function validarCNPJ(cnpj) {
+    cnpj = cnpj.replace(/[^\d]+/g,'');
+    if(cnpj == '' || cnpj.length != 14) return false;
+    if (cnpj == "00000000000000" || cnpj == "11111111111111" || cnpj == "22222222222222" || 
+        cnpj == "33333333333333" || cnpj == "44444444444444" || cnpj == "55555555555555" || 
+        cnpj == "66666666666666" || cnpj == "77777777777777" || cnpj == "88888888888888" || 
+        cnpj == "99999999999999")
+        return false;
+    let tamanho = cnpj.length - 2;
+    let numeros = cnpj.substring(0,tamanho);
+    let digitos = cnpj.substring(tamanho);
+    let soma = 0;
+    let pos = tamanho - 7;
+    for (let i = tamanho; i >= 1; i--) {
+        soma += numeros.charAt(tamanho - i) * pos--;
+        if (pos < 2) pos = 9;
+    }
+    let resultado = soma % 11 < 2 ? 0 : 11 - (soma % 11);
+    if (resultado != digitos.charAt(0)) return false;
+    tamanho = tamanho + 1;
+    numeros = cnpj.substring(0,tamanho);
+    soma = 0;
+    pos = tamanho - 7;
+    for (let i = tamanho; i >= 1; i--) {
+        soma += numeros.charAt(tamanho - i) * pos--;
+        if (pos < 2) pos = 9;
+    }
+    resultado = soma % 11 < 2 ? 0 : 11 - (soma % 11);
+    if (resultado != digitos.charAt(1)) return false;
+    return true;
+}
+
+function preloadGPS() {
+    console.log("[RASTREIO] Pré-carregando GPS...");
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                currentCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                console.log("[RASTREIO] GPS pré-carregado com sucesso:", currentCoords);
+            },
+            (err) => { console.warn("[RASTREIO] Falha ao pré-carregar GPS:", err.message); },
+            { timeout: 8000, enableHighAccuracy: true }
+        );
+    }
+}
 
 async function initSupabase() {
     try {
         const response = await fetch('/api/config');
         const config = await response.json();
         supabaseClient = window.supabase.createClient(config.url, config.key);
-        supabaseClient.auth.onAuthStateChange((event, session) => {
-            if (session) handleAuthSuccess(session.user);
+        supabaseClient.auth.onAuthStateChange(async (event, session) => {
+            if (event === 'PASSWORD_RECOVERY') {
+                const newPassword = prompt("Digite sua nova senha:");
+                if (newPassword) {
+                    const { error } = await supabaseClient.auth.updateUser({ password: newPassword });
+                    if (error) {
+                        showToast("Erro ao redefinir senha: " + error.message, "error");
+                    } else {
+                        showToast("Senha redefinida com sucesso! Você já está logado.", "success");
+                    }
+                }
+            }
+            if (session) handleAuthSuccess(session.user, session);
             else { showView('login-view'); document.getElementById('main-header').style.display = 'none'; }
         });
         setupEventListeners();
@@ -41,6 +120,24 @@ function setupEventListeners() {
             if (error) showToast("Erro: " + error.message, "error");
         };
     }
+
+    const forgotPasswordLnk = document.getElementById('forgot-password-lnk');
+    if (forgotPasswordLnk) {
+        forgotPasswordLnk.onclick = async (e) => {
+            e.preventDefault();
+            const email = prompt("Digite seu e-mail cadastrado para receber o link de redefinição de senha:");
+            if (email) {
+                const { error } = await supabaseClient.auth.resetPasswordForEmail(email.trim(), {
+                    redirectTo: window.location.origin
+                });
+                if (error) {
+                    showToast("Erro ao enviar e-mail: " + error.message, "error");
+                } else {
+                    showToast("E-mail de redefinição enviado com sucesso! Verifique sua caixa de entrada.", "success");
+                }
+            }
+        };
+    }
     const logoutBtn = document.getElementById('logout-btn');
     if (logoutBtn) {
         logoutBtn.onclick = async () => { 
@@ -52,36 +149,77 @@ function setupEventListeners() {
     }
 
     const clientDoc = document.getElementById('client-doc');
+    const docError = document.getElementById('client-doc-error');
     if (clientDoc) {
         clientDoc.oninput = (e) => {
-            const val = e.target.value.replace(/\D/g, '');
-            if (val.length >= 11) searchClient(val);
+            let val = e.target.value.replace(/\D/g, '');
+            if (val.length <= 11) {
+                e.target.value = val.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/g, "$1.$2.$3-$4");
+            } else {
+                e.target.value = val.substring(0,14).replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/g, "$1.$2.$3/$4-$5");
+            }
+            val = e.target.value.replace(/\D/g, '');
+            
+            if (val.length === 11) {
+                if (!validarCPF(val)) {
+                    docError.style.display = 'block';
+                    docError.innerText = 'CPF inválido';
+                } else {
+                    docError.style.display = 'none';
+                    searchClient(val);
+                }
+            } else if (val.length === 14) {
+                if (!validarCNPJ(val)) {
+                    docError.style.display = 'block';
+                    docError.innerText = 'CNPJ inválido';
+                } else {
+                    docError.style.display = 'none';
+                    searchClient(val);
+                }
+            } else if (val.length > 0) {
+                docError.style.display = 'block';
+                docError.innerText = 'Documento incompleto';
+            } else {
+                docError.style.display = 'none';
+            }
             saveDraft();
         };
     }
     document.getElementById('add-item').onclick = () => { addItem(); saveDraft(); };
     document.getElementById('delivery-form').onsubmit = async (e) => {
         e.preventDefault();
+        
+        // Bloquear se CPF/CNPJ for inválido
+        if (docError && docError.style.display === 'block') {
+            showToast("Corrija o CPF/CNPJ inválido antes de finalizar.", "error");
+            return;
+        }
+        
         const btn = e.target.querySelector('button[type="submit"]');
         const originalText = btn.innerHTML;
-        btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
-        if (navigator.geolocation) {
+        
+        // Inicia prefetch rápido de GPS se ainda não carregado
+        if (!currentCoords && navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
-                (pos) => { currentCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude }; submitDelivery(btn, originalText); },
-                () => { showToast("Sem GPS.", "info"); submitDelivery(btn, originalText); },
-                { timeout: 5000 }
+                (pos) => { currentCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude }; },
+                () => {},
+                { timeout: 4000 }
             );
-        } else { submitDelivery(btn, originalText); }
+        }
+        
+        openWhatsAppCheckoutModal(btn, originalText);
     };
 }
 
-async function handleAuthSuccess(user) {
+async function handleAuthSuccess(user, session) {
     currentUser = user;
     document.getElementById('main-header').style.display = 'block';
     
-    // Tenta obter os dados do perfil do banco local (Nome Completo / Nível de Acesso)
     try {
-        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) {
+            const { data } = await supabaseClient.auth.getSession();
+            session = data.session;
+        }
         const res = await fetch('/api/usuarios/me', {
             headers: { 'Authorization': `Bearer ${session?.access_token}` }
         });
@@ -110,7 +248,6 @@ async function handleAuthSuccess(user) {
     const adminCard = document.getElementById('admin-card');
     if (adminCard) adminCard.style.display = isAdmin ? 'flex' : 'none';
     
-    // Restaurar a última tela visualizada (ignorando login-view)
     const savedView = localStorage.getItem('active_view');
     if (savedView && savedView !== 'login-view') {
         showView(savedView);
@@ -122,16 +259,43 @@ async function handleAuthSuccess(user) {
 }
 
 function showView(viewId) {
+    const currentActiveView = document.querySelector('.view.active');
+    if (currentActiveView && currentActiveView.id === 'driver-view' && viewId !== 'driver-view') {
+        const hasData = document.getElementById('client-doc')?.value || 
+                        document.getElementById('client-name')?.value || 
+                        document.getElementById('doc-number')?.value || 
+                        document.querySelectorAll('.item-card').length > 0;
+                        
+        if (hasData) {
+            if (!confirm("Deseja realmente sair? Isso apagará as informações preenchidas nesta entrega.")) {
+                return;
+            }
+            localStorage.removeItem('gas_draft');
+            preUploadedPhotos = [];
+            
+            if (document.getElementById('client-doc')) document.getElementById('client-doc').value = "";
+            if (document.getElementById('client-name')) document.getElementById('client-name').value = "";
+            if (document.getElementById('doc-number')) document.getElementById('doc-number').value = "";
+            const container = document.getElementById('items-container');
+            if (container) container.innerHTML = "";
+            const docError = document.getElementById('client-doc-error');
+            if (docError) docError.style.display = 'none';
+        }
+    }
+
     document.querySelectorAll('.view').forEach(v => { v.classList.remove('active'); v.style.display = 'none'; });
     const view = document.getElementById(viewId);
     if (view) { view.classList.add('active'); view.style.display = 'block'; }
     
-    // Salvar a tela atual para persistência
     localStorage.setItem('active_view', viewId);
     
+    if (viewId === 'driver-view') preloadGPS();
     if (viewId === 'history-view') loadHistory();
     if (viewId === 'clients-view') loadClients();
-    if (viewId === 'admin-view') loadUsers();
+    if (viewId === 'admin-view') {
+        loadUsers();
+        checkWhatsAppStatus();
+    }
 }
 
 let itemCounter = 0;
@@ -167,29 +331,188 @@ function addItem(data = null) {
     if (data) { div.querySelector('[name="tipo_gas"]').value = data.tipo_gas; div.querySelector('[name="tamanho_gas"]').value = data.tamanho_gas; }
 }
 
-function addPhoto(id) {
-    const input = document.createElement('input');
-    input.type = 'file'; input.accept = 'image/*'; input.capture = 'environment';
-    input.onchange = (e) => {
-        if (e.target.files[0]) {
-            const reader = new FileReader();
-            reader.onload = (re) => {
-                const img = document.createElement('img');
-                img.src = re.target.result; img.style = "width:100%; height:60px; object-fit:cover; border-radius:4px;";
-                const hiddenInput = document.createElement('input');
-                hiddenInput.type = 'file'; hiddenInput.style.display = 'none'; hiddenInput.className = `photo-file-input`;
-                const dt = new DataTransfer(); dt.items.add(e.target.files[0]); hiddenInput.files = dt.files;
-                document.getElementById(`photos-${id}`).appendChild(img);
-                document.getElementById(`photos-${id}`).appendChild(hiddenInput);
-                saveDraft();
-            };
-            reader.readAsDataURL(e.target.files[0]);
-        }
-    };
-    input.click();
+function compressImage(file, maxWidth, maxHeight, quality) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.src = URL.createObjectURL(file);
+        img.onload = () => {
+            let width = img.width;
+            let height = img.height;
+            
+            if (width > height) {
+                if (width > maxWidth) {
+                    height = Math.round((height * maxWidth) / width);
+                    width = maxWidth;
+                }
+            } else {
+                if (height > maxHeight) {
+                    width = Math.round((width * maxHeight) / height);
+                    height = maxHeight;
+                }
+            }
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    resolve(blob);
+                } else {
+                    reject(new Error("Erro ao compactar imagem no Canvas"));
+                }
+            }, 'image/jpeg', quality);
+        };
+        img.onerror = (err) => reject(err);
+    });
 }
 
-async function submitDelivery(btn, originalText) {
+function addPhoto(id) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    // CORREÇÃO: definir capture ANTES de adicionar ao DOM, usando ambos os métodos
+    // para máxima compatibilidade (Android Chrome, iOS Safari, Samsung Internet)
+    input.setAttribute('capture', 'environment');
+    input.capture = 'environment';
+    input.style.cssText = 'position:fixed; top:-9999px; left:-9999px; opacity:0; width:1px; height:1px;';
+    
+    input.onchange = async (e) => {
+        // CORREÇÃO: remover o input do DOM somente aqui, após o evento disparar
+        if (document.body.contains(input)) {
+            document.body.removeChild(input);
+        }
+
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const photoId = 'photo-' + Date.now();
+        const container = document.getElementById(`photos-${id}`);
+        
+        const photoDiv = document.createElement('div');
+        photoDiv.id = photoId;
+        photoDiv.className = 'photo-preview-container';
+        photoDiv.style = "position: relative; width: 100%; height: 80px; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.1);";
+        
+        const img = document.createElement('img');
+        img.style = "width: 100%; height: 100%; object-fit: cover;";
+        
+        const loader = document.createElement('div');
+        loader.className = 'photo-loader';
+        loader.style = "position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; color: white; font-size: 0.8rem;";
+        loader.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        
+        photoDiv.appendChild(img);
+        photoDiv.appendChild(loader);
+        container.appendChild(photoDiv);
+
+        // Previsualização instantânea na tela do motorista
+        const reader = new FileReader();
+        reader.onload = (re) => { img.src = re.target.result; };
+        reader.readAsDataURL(file);
+
+        let finalFile = file;
+        try {
+            // Comprime a imagem no próprio celular antes de enviar
+            finalFile = await compressImage(file, 1024, 1024, 0.7);
+        } catch (compressErr) {
+            console.warn("[COMPRESSÃO CLIENTE] Falha ao compactar, enviando original:", compressErr);
+        }
+
+        const formData = new FormData();
+        formData.append('foto', finalFile, file.name || 'foto.jpg');
+        
+        const clientName = document.getElementById('client-name').value || 'Cliente_Temporario';
+        const docNum = document.getElementById('doc-number').value || 'S_N';
+        formData.append('client_name', clientName);
+        formData.append('invoice_number', docNum);
+
+        try {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            const res = await fetch('/api/upload-temp-photo', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${session?.access_token}` },
+                body: formData
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                loader.remove();
+                
+                photoDiv.setAttribute('data-url', data.drive_url);
+                photoDiv.setAttribute('data-id', data.file_id);
+                preUploadedPhotos.push({ id: photoId, url: data.drive_url, file_id: data.file_id });
+                
+                const deleteBtn = document.createElement('button');
+                deleteBtn.type = 'button';
+                deleteBtn.style = "position: absolute; top: 4px; right: 4px; background: rgba(255,0,0,0.8); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 0.7rem; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;";
+                deleteBtn.innerHTML = '&times;';
+                deleteBtn.onclick = async (ev) => {
+                    ev.stopPropagation();
+                    await deleteTempPhoto(photoId, data.file_id);
+                };
+                photoDiv.appendChild(deleteBtn);
+                saveDraft();
+            } else {
+                showToast("Erro ao enviar foto para o Google Drive", "error");
+                photoDiv.remove();
+            }
+        } catch (err) {
+            showToast("Erro de conexão no upload", "error");
+            photoDiv.remove();
+        }
+    };
+
+    // CORREÇÃO: manter o input no DOM enquanto o usuário interage com a câmera
+    // Somente removemos dentro do onchange (acima). Também removemos se cancelar após 5min.
+    document.body.appendChild(input);
+    input.click();
+
+    // Cleanup de segurança: remove o input se o usuário cancelar sem escolher foto
+    const cleanupTimer = setTimeout(() => {
+        if (document.body.contains(input)) {
+            document.body.removeChild(input);
+        }
+    }, 5 * 60 * 1000);
+    
+    // Também remove ao fechar a câmera via focus na janela
+    const onWindowFocus = () => {
+        setTimeout(() => {
+            if (document.body.contains(input) && (!input.files || input.files.length === 0)) {
+                document.body.removeChild(input);
+            }
+            clearTimeout(cleanupTimer);
+            window.removeEventListener('focus', onWindowFocus);
+        }, 500);
+    };
+    window.addEventListener('focus', onWindowFocus);
+}
+
+async function deleteTempPhoto(photoId, fileId) {
+    const photoDiv = document.getElementById(photoId);
+    if (photoDiv) photoDiv.remove();
+    
+    preUploadedPhotos = preUploadedPhotos.filter(p => p.id !== photoId);
+    saveDraft();
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        await fetch(`/api/delete-temp-photo/${fileId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        });
+    } catch (e) {
+        console.warn("Erro ao deletar foto do Drive:", e);
+    }
+}
+
+async function submitDelivery(whatsappPhone = null, btn, originalText) {
+    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
+    const photoUrls = preUploadedPhotos.map(p => p.url);
+
     const payload = {
         cnpj: document.getElementById('client-doc').value.replace(/\D/g, ''),
         nome_cliente: document.getElementById('client-name').value,
@@ -197,6 +520,8 @@ async function submitDelivery(btn, originalText) {
         data_entrega: new Date().toISOString(),
         tipo_entrega: 'motorista',
         lat: currentCoords?.lat, lng: currentCoords?.lng,
+        fotos_pre_carregadas: photoUrls,
+        whatsapp_phone: whatsappPhone,
         cilindros: Array.from(document.querySelectorAll('.item-card')).map(card => ({
             tipo_gas: card.querySelector('[name="tipo_gas"]').value,
             tamanho_gas: card.querySelector('[name="tamanho_gas"]').value,
@@ -204,17 +529,181 @@ async function submitDelivery(btn, originalText) {
             obs: card.querySelector('.cil-obs').value
         }))
     };
-    const formData = new FormData();
-    formData.append('payload', JSON.stringify(payload));
-    document.querySelectorAll('input[type="file"].photo-file-input').forEach(input => {
-        if (input.files[0]) formData.append('fotos', input.files[0]);
-    });
+    
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
-        const res = await fetch('/api/entregas', { method: 'POST', body: formData, headers: { 'Authorization': `Bearer ${session?.access_token}` } });
-        if (res.ok) { showToast("Sucesso!"); localStorage.removeItem('gas_draft'); setTimeout(() => location.reload(), 1000); }
+        const res = await fetch('/api/entregas', { 
+            method: 'POST', 
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session?.access_token}` 
+            }, 
+            body: JSON.stringify(payload)
+        });
+        if (res.ok) { 
+            showToast("Entrega registrada com sucesso!"); 
+            localStorage.removeItem('gas_draft'); 
+            preUploadedPhotos = [];
+            
+            // Fecha o modal se estiver aberto e recarrega
+            const modal = document.getElementById('whatsapp-checkout-modal');
+            if (modal) modal.style.display = 'none';
+            setTimeout(() => { location.reload(); }, 1000);
+        }
         else { showToast("Erro no envio", "error"); btn.disabled = false; btn.innerHTML = originalText; }
     } catch (err) { showToast("Erro conexão", "error"); btn.disabled = false; btn.innerHTML = originalText; }
+}
+
+function openWhatsAppCheckoutModal(btn, originalText) {
+    const modal = document.getElementById('whatsapp-checkout-modal');
+    const phoneInput = document.getElementById('whatsapp-phone-input');
+    const cancelBtn = document.getElementById('whatsapp-cancel-btn');
+    const sendBtn = document.getElementById('whatsapp-send-btn');
+    const cnpjVal = document.getElementById('client-doc').value.replace(/\D/g, '');
+    
+    if (!modal) {
+        submitDelivery(null, btn, originalText);
+        return;
+    }
+    
+    if (phoneInput) {
+        phoneInput.oninput = (e) => {
+            let val = e.target.value.replace(/\D/g, '');
+            if (val.length <= 11) {
+                e.target.value = val.replace(/^(\d{2})(\d)/g,"($1) $2").replace(/(\d)(\d{4})$/,"$1-$2");
+            } else {
+                e.target.value = val.substring(0, 11).replace(/^(\d{2})(\d)/g,"($1) $2").replace(/(\d)(\d{4})$/,"$1-$2");
+            }
+        };
+        
+        const storedPhone = localStorage.getItem(`phone_${cnpjVal}`) || "";
+        phoneInput.value = storedPhone;
+        if (storedPhone) {
+            let val = storedPhone.replace(/\D/g, '');
+            phoneInput.value = val.replace(/^(\d{2})(\d)/g,"($1) $2").replace(/(\d)(\d{4})$/,"$1-$2");
+        }
+    }
+    
+    cancelBtn.onclick = () => {
+        modal.style.display = 'none';
+        submitDelivery(null, btn, originalText);
+    };
+    
+    sendBtn.onclick = () => {
+        const rawPhone = phoneInput.value.replace(/\D/g, '');
+        if (rawPhone.length < 10) {
+            showToast("Digite um número de WhatsApp válido com DDD.", "error");
+            return;
+        }
+        
+        localStorage.setItem(`phone_${cnpjVal}`, rawPhone);
+        modal.style.display = 'none';
+        submitDelivery(rawPhone, btn, originalText);
+    };
+    
+    modal.style.display = 'flex';
+}
+
+async function checkWhatsAppStatus() {
+    const container = document.getElementById('whatsapp-status-container');
+    if (!container) return;
+    
+    container.innerHTML = '<p style="color: #666; font-weight: 500;"><i class="fas fa-spinner fa-spin"></i> Verificando status da Evolution API...</p>';
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch('/api/whatsapp/status', {
+            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.status === 'success' && data.state === 'open') {
+                container.innerHTML = `
+                    <div style="color: #25D366; font-weight: 700; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 1rem;">
+                        <i class="fas fa-check-circle" style="font-size: 1.4rem;"></i> CONECTADO E PRONTO
+                    </div>
+                    <p style="font-size: 0.8rem; color: #666; margin-bottom: 1rem;">O sistema de disparo automático está ativo.</p>
+                    <button onclick="disconnectWhatsApp()" class="btn btn-outline" style="border-color: #dc3545; color: #dc3545; font-size: 0.85rem; padding: 0.5rem 1rem; width: auto; font-weight: 600;">
+                        <i class="fas fa-unlink"></i> Desconectar WhatsApp
+                    </button>
+                `;
+            } else {
+                container.innerHTML = `
+                    <div style="color: #dc3545; font-weight: 700; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 1rem;">
+                        <i class="fas fa-exclamation-triangle" style="font-size: 1.4rem;"></i> WHATSAPP DESCONECTADO
+                    </div>
+                    <p style="font-size: 0.8rem; color: #666; margin-bottom: 1.25rem;">Gere um QR Code para escanear com o seu aparelho corporativo.</p>
+                    <button onclick="generateWhatsAppQR()" class="btn btn-primary" style="background: #25D366; border-color: #25D366; font-size: 0.85rem; padding: 0.6rem 1.2rem; width: auto; font-weight: 600;">
+                        <i class="fab fa-whatsapp"></i> Gerar QR Code de Conexão
+                    </button>
+                    <div id="whatsapp-qr-wrapper" style="margin-top: 1.5rem; display: none; text-align: center;">
+                        <div id="whatsapp-qr-spinner" style="color: #666; font-weight: 500; font-size: 0.85rem;"><i class="fas fa-spinner fa-spin"></i> Solicitando QR Code...</div>
+                        <img id="whatsapp-qr-img" style="max-width: 250px; height: auto; border: 4px solid #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: none; margin: 0 auto;" alt="QR Code WhatsApp">
+                        <p style="font-size: 0.75rem; color: #999; margin-top: 8px;">Aponte o WhatsApp em Aparelhos Conectados ➡️ Conectar um Aparelho.</p>
+                    </div>
+                `;
+            }
+        } else {
+            container.innerHTML = `<p style="color: #dc3545; font-weight: 600;"><i class="fas fa-exclamation-circle"></i> Erro ao consultar a API: ${res.statusText}</p>`;
+        }
+    } catch (err) {
+        container.innerHTML = `<p style="color: #dc3545; font-weight: 600;"><i class="fas fa-exclamation-circle"></i> Falha de conexão: ${err.message}</p>`;
+    }
+}
+
+async function generateWhatsAppQR() {
+    const wrapper = document.getElementById('whatsapp-qr-wrapper');
+    const img = document.getElementById('whatsapp-qr-img');
+    const spinner = document.getElementById('whatsapp-qr-spinner');
+    
+    if (!wrapper) return;
+    wrapper.style.display = 'block';
+    if (img) img.style.display = 'none';
+    if (spinner) spinner.style.display = 'block';
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch('/api/whatsapp/qr', {
+            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.status === 'success' && data.base64) {
+                spinner.style.display = 'none';
+                img.src = data.base64;
+                img.style.display = 'block';
+                
+                // Monitora a conexão periodicamente
+                setTimeout(checkWhatsAppStatus, 5000);
+            } else {
+                spinner.innerHTML = `<span style="color: #dc3545;"><i class="fas fa-exclamation-circle"></i> ${data.message || 'Erro ao gerar QR Code'}</span>`;
+            }
+        } else {
+            spinner.innerHTML = `<span style="color: #dc3545;"><i class="fas fa-exclamation-circle"></i> Erro: ${res.statusText}</span>`;
+        }
+    } catch (err) {
+        spinner.innerHTML = `<span style="color: #dc3545;"><i class="fas fa-exclamation-circle"></i> Falha: ${err.message}</span>`;
+    }
+}
+
+async function disconnectWhatsApp() {
+    if (!confirm("Deseja realmente desconectar o WhatsApp do sistema? Isso desativará os envios automáticos.")) return;
+    
+    const container = document.getElementById('whatsapp-status-container');
+    if (container) container.innerHTML = '<p style="color: #666; font-weight: 500;"><i class="fas fa-spinner fa-spin"></i> Desconectando...</p>';
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch('/api/whatsapp/disconnect', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        });
+        showToast("Instância desconectada com sucesso!");
+        setTimeout(checkWhatsAppStatus, 1500);
+    } catch (err) {
+        showToast("Erro ao desconectar: " + err.message, "error");
+        checkWhatsAppStatus();
+    }
 }
 
 async function searchClient(doc) {
@@ -222,6 +711,23 @@ async function searchClient(doc) {
         const res = await fetch(`/api/cnpj/${doc}`);
         if (res.ok) { const data = await res.json(); document.getElementById('client-name').value = data.nome_razao || ""; saveDraft(); }
     } catch (err) {}
+}
+
+async function deleteDelivery(id) {
+    if (!confirm("Tem certeza que deseja excluir esta entrega do histórico? Esta ação não pode ser desfeita.")) return;
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch(`/api/deletar_entrega/${id}`, {
+            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        });
+        if (res.ok) {
+            showToast("Entrega excluída!");
+            loadHistory();
+        } else {
+            const err = await res.json();
+            showToast("Erro ao excluir: " + (err.detail || "Tente novamente"), "error");
+        }
+    } catch (e) { showToast("Erro de conexão", "error"); }
 }
 
 async function loadHistory() {
@@ -250,7 +756,14 @@ async function loadHistory() {
                             - <i class="fas fa-file-invoice"></i> NF: ${item.nf || 'S/N'}
                         </p>
                     </div>
-                    <i class="fas fa-chevron-down" id="icon-${item.id}" style="color:#ccc;"></i>
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        ${currentUser && (currentUser.nivel_acesso === 'adm' || (currentUser.email && (currentUser.email.toLowerCase().includes('admin') || currentUser.email.toLowerCase() === 'comercial@servweld.com.br'))) ? `
+                            <button type="button" onclick="event.stopPropagation(); deleteDelivery(${item.id})" style="color:var(--danger, #f44336); border:none; background:none; font-size:1.15rem; cursor:pointer; display:inline-flex;" title="Excluir entrega">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        ` : ''}
+                        <i class="fas fa-chevron-down" id="icon-${item.id}" style="color:#ccc;"></i>
+                    </div>
                 </div>
                 <div id="details-${item.id}" style="display:none; margin-top:12px; padding-top:12px; border-top:1px solid #eee;">
                     <p style="font-size:0.85rem; font-weight:600; color:var(--primary); margin-bottom:8px;">Itens da Entrega:</p>
@@ -273,6 +786,11 @@ async function loadHistory() {
                             </div>
                         </div>
                     ` : ''}
+                    <div style="margin-top:16px; border-top:1px dashed #eee; padding-top:12px; display:flex; justify-content:flex-end;">
+                        <button type="button" onclick="event.stopPropagation(); resendWhatsApp(${item.id}, '${(item.cliente || "Cliente").replace(/'/g, "\\'")}')" class="btn btn-outline" style="font-size:0.8rem; padding:6px 14px; border-color:#25D366; color:#25D366; background:#f0fff4; width:auto; display:inline-flex; align-items:center; gap:8px;">
+                            <i class="fab fa-whatsapp" style="font-size:1rem;"></i> Reenviar p/ WhatsApp
+                        </button>
+                    </div>
                 </div>
             </div>
         `).join('') || '<p style="text-align:center; color:#999; padding:3rem;">Nenhuma entrega encontrada para este filtro.</p>';
@@ -310,11 +828,27 @@ async function loadClients() {
     } catch (err) {}
 }
 
+async function deleteClient(cnpj) {
+    if (!confirm("Tem certeza que deseja excluir este cliente completamente do sistema?")) return;
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch(`/api/clientes/${cnpj}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        });
+        if (res.ok) {
+            showToast("Cliente excluído!");
+            loadClients();
+        } else {
+            showToast("Erro ao excluir cliente", "error");
+        }
+    } catch (e) { showToast("Erro de conexão", "error"); }
+}
+
 function renderClientsList(clients) {
     const container = document.getElementById('clients-list-container');
     if (!container) return;
     
-    // Configura o contêiner para usar Grid Layout responsivo
     container.style.display = 'grid';
     container.style.gridTemplateColumns = 'repeat(auto-fill, minmax(300px, 1fr))';
     container.style.gap = '16px';
@@ -330,10 +864,17 @@ function renderClientsList(clients) {
             <div>
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
                     <h4 style="margin: 0 0 6px 0; font-size: 0.95rem; color: var(--dark); line-height: 1.3; font-weight: 700; word-break: break-word; flex: 1;">${c.nome_razao || "Sem Nome"}</h4>
-                    ${isAdmin && hasLocation ? `
-                        <button onclick="deleteClientLocation('${c.cnpj}')" class="btn btn-outline" style="border: none; color: var(--danger); padding: 4px 8px; width: auto; font-size: 0.9rem; background: transparent; cursor: pointer; display: inline-flex;" title="Excluir Localização">
-                            <i class="fas fa-trash-alt"></i>
-                        </button>
+                    ${isAdmin ? `
+                        <div style="display: flex; gap: 4px;">
+                            ${hasLocation ? `
+                                <button onclick="deleteClientLocation('${c.cnpj}')" class="btn btn-outline" style="border: none; color: #ff9800; padding: 4px 6px; width: auto; font-size: 0.9rem; background: transparent; cursor: pointer; display: inline-flex;" title="Limpar Coordenadas do GPS">
+                                    <i class="fas fa-map-marker-alt" style="text-decoration: line-through;"></i>
+                                </button>
+                            ` : ''}
+                            <button onclick="deleteClient('${c.cnpj}')" class="btn btn-outline" style="border: none; color: var(--danger); padding: 4px 6px; width: auto; font-size: 0.9rem; background: transparent; cursor: pointer; display: inline-flex;" title="Excluir Cliente do Sistema">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </div>
                     ` : ''}
                 </div>
                 <p style="font-size: 0.8rem; color: #777; margin: 0 0 12px 0; display: flex; align-items: center; gap: 5px;">
@@ -390,12 +931,24 @@ function saveDraft() {
         clientDoc: document.getElementById('client-doc')?.value || "",
         clientName: document.getElementById('client-name')?.value || "",
         docNumber: document.getElementById('doc-number')?.value || "",
-        items: Array.from(document.querySelectorAll('.item-card')).map(card => ({
-            tipo_gas: card.querySelector('[name="tipo_gas"]').value,
-            tamanho_gas: card.querySelector('[name="tamanho_gas"]').value,
-            qtd: card.querySelector('[name="qtd"]').value,
-            obs: card.querySelector('.cil-obs').value
-        }))
+        preUploadedPhotos: preUploadedPhotos,
+        items: Array.from(document.querySelectorAll('.item-card')).map(card => {
+            const labelText = card.querySelector('b')?.innerText || "";
+            const id = labelText.replace(/\D/g, '') || "1";
+            const photos = Array.from(card.querySelectorAll('.photo-preview-container')).map(p => ({
+                id: p.id,
+                url: p.getAttribute('data-url'),
+                file_id: p.getAttribute('data-id')
+            }));
+            return {
+                id: id,
+                tipo_gas: card.querySelector('[name="tipo_gas"]').value,
+                tamanho_gas: card.querySelector('[name="tamanho_gas"]').value,
+                qtd: card.querySelector('[name="qtd"]').value,
+                obs: card.querySelector('.cil-obs').value,
+                photos: photos
+            };
+        })
     };
     localStorage.setItem('gas_draft', JSON.stringify(data));
 }
@@ -408,7 +961,46 @@ function restoreDraft() {
             if (document.getElementById('client-doc')) document.getElementById('client-doc').value = data.clientDoc || "";
             if (document.getElementById('client-name')) document.getElementById('client-name').value = data.clientName || "";
             if (document.getElementById('doc-number')) document.getElementById('doc-number').value = data.docNumber || "";
-            if (data.items) data.items.forEach(item => addItem(item));
+            
+            if (data.preUploadedPhotos) {
+                preUploadedPhotos = data.preUploadedPhotos;
+            }
+            
+            if (data.items) {
+                data.items.forEach(item => {
+                    addItem(item);
+                    if (item.photos) {
+                        const container = document.getElementById(`photos-${item.id}`);
+                        if (container) {
+                            item.photos.forEach(p => {
+                                const photoDiv = document.createElement('div');
+                                photoDiv.id = p.id;
+                                photoDiv.className = 'photo-preview-container';
+                                photoDiv.style = "position: relative; width: 100%; height: 80px; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.1);";
+                                photoDiv.setAttribute('data-url', p.url);
+                                photoDiv.setAttribute('data-id', p.file_id);
+                                
+                                const img = document.createElement('img');
+                                img.style = "width: 100%; height: 100%; object-fit: cover;";
+                                img.src = getDisplayUrl(p.url);
+                                
+                                const deleteBtn = document.createElement('button');
+                                deleteBtn.type = 'button';
+                                deleteBtn.style = "position: absolute; top: 4px; right: 4px; background: rgba(255,0,0,0.8); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 0.7rem; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;";
+                                deleteBtn.innerHTML = '&times;';
+                                deleteBtn.onclick = async (ev) => {
+                                    ev.stopPropagation();
+                                    await deleteTempPhoto(p.id, p.file_id);
+                                };
+                                
+                                photoDiv.appendChild(img);
+                                photoDiv.appendChild(deleteBtn);
+                                container.appendChild(photoDiv);
+                            });
+                        }
+                    }
+                });
+            }
         } catch (e) { console.error("Erro restore draft:", e); }
     }
 }
@@ -465,11 +1057,24 @@ function closeImageViewer() {
 function getDisplayUrl(driveUrl) {
     if (!driveUrl) return "";
     try {
-        const urlObj = new URL(driveUrl);
-        const fileId = urlObj.searchParams.get("id");
+        let formattedUrl = driveUrl.replace('export=download', 'export=view');
+        
+        let fileId = "";
+        
+        if (formattedUrl.includes('/file/d/')) {
+            const parts = formattedUrl.split('/file/d/');
+            if (parts.length > 1) {
+                fileId = parts[1].split('/')[0].split('?')[0];
+            }
+        }
+        
+        if (!fileId) {
+            const urlObj = new URL(formattedUrl);
+            fileId = urlObj.searchParams.get("id");
+        }
+        
         if (fileId) {
-            // Retorna o link direto (uc) do Google Drive que tem maior compatibilidade em navegadores mobile
-            return `https://drive.google.com/uc?export=view&id=${fileId}`;
+            return `/api/proxy-image/${fileId}`;
         }
     } catch (e) {
         console.error("Erro ao converter URL:", e);
@@ -736,15 +1341,6 @@ async function saveUserForm(event) {
                 },
                 body: JSON.stringify(payload)
             });
-            
-            // Auto-signup do usuário no Supabase Auth para que consiga logar
-            if (res.ok) {
-                try {
-                    await supabaseClient.auth.signUp({ email, password: senha });
-                } catch (errSupabase) {
-                    console.warn("Aviso Supabase SignUp:", errSupabase);
-                }
-            }
         }
         
         if (res.ok) {
@@ -780,6 +1376,37 @@ async function deleteUser(userId) {
         }
     } catch (err) {
         showToast("Erro de conexão.", "error");
+    }
+}
+
+async function resendWhatsApp(id, clientName) {
+    const rawPhone = prompt(`Digite o número do WhatsApp (com DDD) para reenviar o comprovante de ${clientName}:\nEx: (24) 98888-7777`);
+    if (!rawPhone) return;
+    
+    const phone = rawPhone.replace(/\D/g, '');
+    if (phone.length < 10) {
+        showToast("Número inválido. Reenvio cancelado.", "error");
+        return;
+    }
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch(`/api/entregas/${id}/reenviar-whatsapp`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session?.access_token}`
+            },
+            body: JSON.stringify({ whatsapp_phone: phone })
+        });
+        
+        if (res.ok) {
+            showToast("Comprovante reenviado com sucesso!");
+        } else {
+            showToast("Erro ao reenviar comprovante", "error");
+        }
+    } catch(e) {
+        showToast("Erro de conexão", "error");
     }
 }
 
