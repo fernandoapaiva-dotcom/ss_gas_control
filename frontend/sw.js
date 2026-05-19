@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ss-gas-v2';
+const CACHE_NAME = 'ss-gas-v3';
 const ASSETS = [
   '/',
   '/index.html',
@@ -31,6 +31,6 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   e.respondWith(
-    caches.match(e.request).then((res) => res || fetch(e.request))
+    caches.match(e.request, { ignoreSearch: true }).then((res) => res || fetch(e.request))
   );
 });

@@ -326,17 +326,16 @@ function addItem(data = null) {
         <input type="text" class="form-control cil-obs" placeholder="Observa\u00e7\u00e3o..." style="margin-top:0.5rem;" value="${data?data.obs:''}" oninput="saveDraft()">
         <div id="photos-${id}" style="display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin-top:5px;"></div>
         
-        <!-- INPUT DE CAMERA: embutido diretamente no HTML para iOS Safari respeitar capture=environment -->
-        <!-- NAO mover para JavaScript dinamico - iOS ignora capture em inputs criados programaticamente -->
-        <label for="photo-input-${id}" class="btn btn-outline" style="width:100%; margin-top:5px; font-size:0.8rem; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+        <!-- INPUT DE CAMERA: embutido diretamente no HTML para iOS/Android respeitar capture=environment -->
+        <button type="button" class="btn btn-outline" style="width:100%; margin-top:5px; font-size:0.8rem; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="document.getElementById('photo-input-${id}').click()">
             <i class="fas fa-camera"></i> Adicionar Foto
-        </label>
+        </button>
         <input 
             type="file" 
             id="photo-input-${id}" 
             accept="image/*" 
             capture="environment"
-            style="position:absolute; width:1px; height:1px; opacity:0; overflow:hidden;"
+            style="position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; pointer-events:none;"
             onchange="handlePhotoSelected(event, ${id})"
         >
     `;
