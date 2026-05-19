@@ -468,8 +468,8 @@ function getDisplayUrl(driveUrl) {
         const urlObj = new URL(driveUrl);
         const fileId = urlObj.searchParams.get("id");
         if (fileId) {
-            // Retorna o thumbnail otimizado em alta definição direto do Google Drive
-            return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+            // Retorna o link direto (uc) do Google Drive que tem maior compatibilidade em navegadores mobile
+            return `https://drive.google.com/uc?export=view&id=${fileId}`;
         }
     } catch (e) {
         console.error("Erro ao converter URL:", e);
