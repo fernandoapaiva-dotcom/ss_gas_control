@@ -47,7 +47,11 @@ async def send_whatsapp_receipt_background(
     # 1. Constrói a mensagem em texto formatado
     items_text = ""
     for c in cilindros:
-        obs_text = f" ({c.get('obs')})" if c.get('obs') else ""
+        obs_val = c.get('obs') or c.get('observacao')
+        if obs_val and obs_val.strip() not in ("", "-", "S/N", "obs", "Observação..."):
+            obs_text = f" (Obs: {obs_val.strip()})"
+        else:
+            obs_text = ""
         items_text += f"• *{c.get('qtd', 1)}x {c.get('tipo_gas')} {c.get('tamanho_gas')}*{obs_text}\n"
 
     # Constrói a mensagem principal em texto
