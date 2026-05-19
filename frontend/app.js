@@ -335,7 +335,6 @@ function addItem(data = null) {
 function compressImage(file, maxWidth, maxHeight, quality) {
     return new Promise((resolve, reject) => {
         const img = new Image();
-        img.src = URL.createObjectURL(file);
         img.onload = () => {
             let width = img.width;
             let height = img.height;
@@ -368,6 +367,7 @@ function compressImage(file, maxWidth, maxHeight, quality) {
             }, 'image/jpeg', quality);
         };
         img.onerror = (err) => reject(err);
+        img.src = URL.createObjectURL(file);
     });
 }
 
