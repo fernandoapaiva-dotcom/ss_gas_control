@@ -376,7 +376,7 @@ function addPhoto(id) {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
-    // Sem 'capture' para que o celular mostre o menu nativo com câmera E galeria
+    input.setAttribute('capture', 'environment');
     
     input.onchange = async (e) => {
         const file = e.target.files[0];
@@ -1218,9 +1218,12 @@ function openLocationPickerModal(lat, lng, zoom = 15) {
             updateSelectedCoords(lat, lng);
         });
 
-        // Força recálculo do tamanho após renderização completa
+        // Força recálculos do tamanho em múltiplos intervalos pós-renderização para garantir que não fique cinza
         locationPickerMap.invalidateSize();
-    }, 350);
+        setTimeout(() => { if (locationPickerMap) locationPickerMap.invalidateSize(); }, 100);
+        setTimeout(() => { if (locationPickerMap) locationPickerMap.invalidateSize(); }, 300);
+        setTimeout(() => { if (locationPickerMap) locationPickerMap.invalidateSize(); }, 600);
+    }, 450);
 }
 
 function updateSelectedCoords(lat, lng) {
