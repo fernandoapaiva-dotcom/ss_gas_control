@@ -327,7 +327,14 @@ function addItem(data = null) {
         <input type="text" class="form-control cil-obs" placeholder="Observa\u00e7\u00e3o..." style="margin-top:0.5rem;" value="${data?data.obs:''}" oninput="saveDraft()">
         <div id="photos-${id}" style="display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin-top:5px;"></div>
         
-        <button type="button" class="btn btn-outline" style="width:100%; margin-top:5px; font-size:0.8rem;" onclick="addPhoto(${id})">Adicionar Foto</button>
+        <div style="display:flex; gap:8px; margin-top:5px;">
+            <button type="button" class="btn btn-outline" style="flex:1; font-size:0.8rem; padding:8px;" onclick="addPhoto(${id}, 'camera')">
+                <i class="fas fa-camera"></i> Câmera
+            </button>
+            <button type="button" class="btn btn-outline" style="flex:1; font-size:0.8rem; padding:8px;" onclick="addPhoto(${id}, 'gallery')">
+                <i class="fas fa-image"></i> Galeria
+            </button>
+        </div>
     `;
     container.appendChild(div);
     if (data) { div.querySelector('[name="tipo_gas"]').value = data.tipo_gas; div.querySelector('[name="tamanho_gas"]').value = data.tamanho_gas; }
@@ -372,11 +379,13 @@ function compressImage(file, maxWidth, maxHeight, quality) {
     });
 }
 
-function addPhoto(id) {
+function addPhoto(id, mode = 'camera') {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
-    input.setAttribute('capture', 'environment');
+    if (mode === 'camera') {
+        input.setAttribute('capture', 'environment');
+    }
     
     input.onchange = async (e) => {
         const file = e.target.files[0];
@@ -1190,19 +1199,28 @@ function openLocationPickerModal(lat, lng, zoom = 15) {
             attribution: '© OpenStreetMap'
         }).addTo(locationPickerMap);
         
-        // Ícone verde customizado para o marcador
-        const greenIcon = new L.Icon({
-            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-            iconSize: [25, 41],
-            iconAnchor: [12, 41],
-            popupAnchor: [1, -34],
-            shadowSize: [41, 41]
+        // Marcador vetorial em CSS Puro para evitar falhas de rede CORS com imagens externas
+        const cssIcon = L.divIcon({
+            className: 'custom-div-pin',
+            html: `<div style="
+                background-color: #28a745;
+                width: 24px;
+                height: 24px;
+                border-radius: 50% 50% 50% 0;
+                position: absolute;
+                transform: rotate(-45deg);
+                left: -12px;
+                top: -24px;
+                border: 2px solid white;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            "></div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 24]
         });
         
         locationPickerMarker = L.marker([lat, lng], {
             draggable: true,
-            icon: greenIcon
+            icon: cssIcon
         }).addTo(locationPickerMap);
         
         // Evento ao arrastar o marcador
@@ -1218,11 +1236,12 @@ function openLocationPickerModal(lat, lng, zoom = 15) {
             updateSelectedCoords(lat, lng);
         });
 
-        // Força recálculos do tamanho em múltiplos intervalos pós-renderização para garantir que não fique cinza
+        // Força múltiplos recálculos de layout em tempos variados para remover a tela cinza
         locationPickerMap.invalidateSize();
-        setTimeout(() => { if (locationPickerMap) locationPickerMap.invalidateSize(); }, 100);
-        setTimeout(() => { if (locationPickerMap) locationPickerMap.invalidateSize(); }, 300);
-        setTimeout(() => { if (locationPickerMap) locationPickerMap.invalidateSize(); }, 600);
+        setTimeout(() => { if (locationPickerMap) locationPickerMap.invalidateSize(); }, 50);
+        setTimeout(() => { if (locationPickerMap) locationPickerMap.invalidateSize(); }, 250);
+        setTimeout(() => { if (locationPickerMap) locationPickerMap.invalidateSize(); }, 500);
+        setTimeout(() => { if (locationPickerMap) locationPickerMap.invalidateSize(); }, 1000);
     }, 450);
 }
 
