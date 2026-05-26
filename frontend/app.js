@@ -1237,12 +1237,14 @@ function openLocationPickerModal(lat, lng, zoom = 15) {
         });
 
         // Força múltiplos recálculos de layout em tempos variados para remover a tela cinza
+        locationPickerMap.whenReady(() => {
+            locationPickerMap.invalidateSize();
+        });
         locationPickerMap.invalidateSize();
         setTimeout(() => { if (locationPickerMap) locationPickerMap.invalidateSize(); }, 50);
-        setTimeout(() => { if (locationPickerMap) locationPickerMap.invalidateSize(); }, 250);
+        setTimeout(() => { if (locationPickerMap) locationPickerMap.invalidateSize(); }, 200);
         setTimeout(() => { if (locationPickerMap) locationPickerMap.invalidateSize(); }, 500);
-        setTimeout(() => { if (locationPickerMap) locationPickerMap.invalidateSize(); }, 1000);
-    }, 450);
+    }, 100);
 }
 
 function updateSelectedCoords(lat, lng) {
