@@ -376,8 +376,7 @@ function addPhoto(id) {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
-    input.setAttribute('capture', 'environment');
-    input.capture = 'environment';
+    // Sem 'capture' para que o celular mostre o menu nativo com câmera E galeria
     
     input.onchange = async (e) => {
         const file = e.target.files[0];
@@ -1171,49 +1170,57 @@ function openLocationPickerModal(lat, lng, zoom = 15) {
         saveBtn.disabled = false;
     }
     
-    // Inicializa o mapa com Leaflet (com atraso curto para o container renderizar)
+    // Sempre destrói e recria o mapa para evitar o bug do mapa cinza
+    // (o Leaflet perde as dimensões do container quando o modal some e reaparece)
+    if (locationPickerMap) {
+        locationPickerMap.remove();
+        locationPickerMap = null;
+        locationPickerMarker = null;
+    }
+
+    // Aguarda o modal estar visível antes de inicializar o Leaflet
     setTimeout(() => {
-        if (!locationPickerMap) {
-            locationPickerMap = L.map('location-picker-map').setView([lat, lng], zoom);
-            
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-                attribution: '© OpenStreetMap'
-            }).addTo(locationPickerMap);
-            
-            // Ícone verde customizado para o marcador
-            const greenIcon = new L.Icon({
-                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-                iconSize: [25, 41],
-                iconAnchor: [12, 41],
-                popupAnchor: [1, -34],
-                shadowSize: [41, 41]
-            });
-            
-            locationPickerMarker = L.marker([lat, lng], {
-                draggable: true,
-                icon: greenIcon
-            }).addTo(locationPickerMap);
-            
-            // Evento ao arrastar o marcador
-            locationPickerMarker.on('dragend', function (e) {
-                const position = locationPickerMarker.getLatLng();
-                updateSelectedCoords(position.lat, position.lng);
-            });
-            
-            // Evento ao clicar no mapa
-            locationPickerMap.on('click', function (e) {
-                const { lat, lng } = e.latlng;
-                locationPickerMarker.setLatLng([lat, lng]);
-                updateSelectedCoords(lat, lng);
-            });
-        } else {
-            locationPickerMap.setView([lat, lng], zoom);
+        const mapContainer = document.getElementById('location-picker-map');
+        if (!mapContainer) return;
+
+        locationPickerMap = L.map(mapContainer, { zoomControl: true }).setView([lat, lng], zoom);
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(locationPickerMap);
+        
+        // Ícone verde customizado para o marcador
+        const greenIcon = new L.Icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+        });
+        
+        locationPickerMarker = L.marker([lat, lng], {
+            draggable: true,
+            icon: greenIcon
+        }).addTo(locationPickerMap);
+        
+        // Evento ao arrastar o marcador
+        locationPickerMarker.on('dragend', function () {
+            const position = locationPickerMarker.getLatLng();
+            updateSelectedCoords(position.lat, position.lng);
+        });
+        
+        // Evento ao clicar no mapa
+        locationPickerMap.on('click', function (e) {
+            const { lat, lng } = e.latlng;
             locationPickerMarker.setLatLng([lat, lng]);
-            locationPickerMap.invalidateSize();
-        }
-    }, 200);
+            updateSelectedCoords(lat, lng);
+        });
+
+        // Força recálculo do tamanho após renderização completa
+        locationPickerMap.invalidateSize();
+    }, 350);
 }
 
 function updateSelectedCoords(lat, lng) {
@@ -1320,9 +1327,14 @@ function closeLocationPickerModal() {
     if (modal) {
         modal.style.display = 'none';
     }
+    // Destrói o mapa para forçar recriação limpa na próxima abertura
+    if (locationPickerMap) {
+        locationPickerMap.remove();
+        locationPickerMap = null;
+        locationPickerMarker = null;
+    }
     currentPickerCnpj = null;
     pickerSelectedCoords = null;
-    // Não destruímos totalmente o mapa para poder reutilizar, apenas fechamos o modal.
 }
 
 async function deleteClientLocation(cnpj) {
