@@ -10,6 +10,7 @@
     <link rel="manifest" href="manifest.json">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 </head>
 <body>
     <div id="app">
@@ -322,9 +323,44 @@
         </div>
     </div>
 
+    <!-- Location Picker Modal -->
+    <div id="location-picker-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content" style="max-width: 600px; padding: 0; overflow: hidden; border-radius: 16px;">
+            <div style="padding: 1.25rem 1.5rem; border-bottom: 1px solid #eee; display: flex; align-items: center; justify-content: space-between; background: white;">
+                <div>
+                    <h3 style="margin: 0; font-size: 1.05rem; color: var(--dark); display: flex; align-items: center; gap: 8px;">
+                        <i class="fas fa-map-pin" style="color: var(--primary);"></i> Ajustar Localização do Cliente
+                    </h3>
+                    <p style="margin: 4px 0 0 0; font-size: 0.78rem; color: #888;">Clique no mapa ou arraste o marcador para posicionar a localização correta.</p>
+                </div>
+                <button onclick="closeLocationPickerModal()" style="background: none; border: none; font-size: 1.4rem; color: #aaa; cursor: pointer; line-height: 1; padding: 4px;">&times;</button>
+            </div>
 
+            <div id="location-picker-map" style="width: 100%; height: 380px; background: #e8e8e8;"></div>
+
+            <div style="padding: 1rem 1.5rem; background: #f8f9fa; border-top: 1px solid #eee;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 1rem;">
+                    <i class="fas fa-crosshairs" style="color: var(--primary); font-size: 1rem;"></i>
+                    <div style="flex: 1;">
+                        <span style="font-size: 0.75rem; color: #888; font-weight: 600; display: block; margin-bottom: 2px;">COORDENADAS SELECIONADAS</span>
+                        <span id="location-picker-coords" style="font-size: 0.85rem; color: var(--dark); font-weight: 600; font-family: monospace;">Clique no mapa para selecionar...</span>
+                    </div>
+                    <button onclick="recenterToGPS()" id="recenter-gps-btn" title="Usar minha localização GPS atual" style="background: none; border: 1px solid #ccc; border-radius: 8px; padding: 6px 10px; cursor: pointer; color: #555; font-size: 0.75rem; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                        <i class="fas fa-location-arrow" style="color: var(--primary);"></i> GPS
+                    </button>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="closeLocationPickerModal()" class="btn btn-outline" style="flex: 1; padding: 0.65rem;">Cancelar</button>
+                    <button onclick="saveManualLocation()" id="save-location-btn" class="btn btn-primary" style="flex: 1; padding: 0.65rem;" disabled>
+                        <i class="fas fa-save"></i> Salvar Localização
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WLEo=" crossorigin=""></script>
     <script src="app.js?v=7"></script>
 </body>
 </html>

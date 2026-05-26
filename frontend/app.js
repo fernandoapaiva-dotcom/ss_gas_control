@@ -911,7 +911,7 @@ function renderClientsList(clients) {
             
             <div style="margin-top: auto;">
                 ${hasLocation ? `
-                    <div style="border-radius: 8px; overflow: hidden; border: 1px solid #eee; position: relative; height: 120px;">
+                    <div style="border-radius: 8px; overflow: hidden; border: 1px solid #eee; position: relative; height: 120px; margin-bottom: 8px;">
                         <iframe 
                             width="100%" 
                             height="120" 
@@ -928,6 +928,9 @@ function renderClientsList(clients) {
                             </span>
                         </div>
                     </div>
+                    <button type="button" onclick="registerClientLocation('${c.cnpj}')" class="btn btn-outline" style="font-size: 0.7rem; padding: 6px 10px; width: 100%; border-color: #ff9800; color: #ff9800; display: flex; align-items: center; justify-content: center; gap: 6px; background: #fff; border-radius: 8px; font-weight: 600;">
+                        <i class="fas fa-edit"></i> Ajustar Pin
+                    </button>
                 ` : `
                     <div style="display: flex; flex-direction: column; gap: 8px;">
                         <p style="font-size: 0.75rem; color: #999; margin: 4px 0; font-style: italic; display: flex; align-items: center; gap: 5px;">
@@ -1128,62 +1131,198 @@ function closeRouteModal() {
     }
 }
 
+let locationPickerMap = null;
+let locationPickerMarker = null;
+let currentPickerCnpj = null;
+let pickerSelectedCoords = null;
+
 function registerClientLocation(cnpj) {
+    currentPickerCnpj = cnpj;
+    
+    // Tenta carregar coordenadas pré-existentes do cliente se já houver
+    const client = allClients.find(c => c.cnpj === cnpj);
+    let initialLat = -22.9068; // Rio de Janeiro / Brasil como fallback padrão
+    let initialLng = -43.1729;
+    let zoom = 4;
+    
+    if (client && client.lat && client.lng) {
+        initialLat = parseFloat(client.lat);
+        initialLng = parseFloat(client.lng);
+        zoom = 15;
+    }
+    
+    openLocationPickerModal(initialLat, initialLng, zoom);
+}
+
+function openLocationPickerModal(lat, lng, zoom = 15) {
+    const modal = document.getElementById('location-picker-modal');
+    const coordsSpan = document.getElementById('location-picker-coords');
+    const saveBtn = document.getElementById('save-location-btn');
+    
+    if (!modal) return;
+    
+    modal.style.display = 'flex';
+    pickerSelectedCoords = { lat, lng };
+    
+    if (coordsSpan) {
+        coordsSpan.innerText = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    }
+    if (saveBtn) {
+        saveBtn.disabled = false;
+    }
+    
+    // Inicializa o mapa com Leaflet (com atraso curto para o container renderizar)
+    setTimeout(() => {
+        if (!locationPickerMap) {
+            locationPickerMap = L.map('location-picker-map').setView([lat, lng], zoom);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap'
+            }).addTo(locationPickerMap);
+            
+            // Ícone verde customizado para o marcador
+            const greenIcon = new L.Icon({
+                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            });
+            
+            locationPickerMarker = L.marker([lat, lng], {
+                draggable: true,
+                icon: greenIcon
+            }).addTo(locationPickerMap);
+            
+            // Evento ao arrastar o marcador
+            locationPickerMarker.on('dragend', function (e) {
+                const position = locationPickerMarker.getLatLng();
+                updateSelectedCoords(position.lat, position.lng);
+            });
+            
+            // Evento ao clicar no mapa
+            locationPickerMap.on('click', function (e) {
+                const { lat, lng } = e.latlng;
+                locationPickerMarker.setLatLng([lat, lng]);
+                updateSelectedCoords(lat, lng);
+            });
+        } else {
+            locationPickerMap.setView([lat, lng], zoom);
+            locationPickerMarker.setLatLng([lat, lng]);
+            locationPickerMap.invalidateSize();
+        }
+    }, 200);
+}
+
+function updateSelectedCoords(lat, lng) {
+    pickerSelectedCoords = { lat, lng };
+    const coordsSpan = document.getElementById('location-picker-coords');
+    if (coordsSpan) {
+        coordsSpan.innerText = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    }
+    const saveBtn = document.getElementById('save-location-btn');
+    if (saveBtn) {
+        saveBtn.disabled = false;
+    }
+}
+
+function recenterToGPS() {
     if (!navigator.geolocation) {
         showToast("Seu dispositivo não suporta Geolocalização.", "error");
         return;
     }
     
-    // Mostra um spinner de carregamento no botão
-    const btn = event?.target?.closest('button');
+    const gpsBtn = document.getElementById('recenter-gps-btn');
     let originalHtml = "";
-    if (btn) {
-        originalHtml = btn.innerHTML;
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Obtendo GPS...';
+    if (gpsBtn) {
+        originalHtml = gpsBtn.innerHTML;
+        gpsBtn.disabled = true;
+        gpsBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> GPS...';
     }
     
     navigator.geolocation.getCurrentPosition(
-        async (pos) => {
+        (pos) => {
             const lat = pos.coords.latitude;
             const lng = pos.coords.longitude;
             
-            try {
-                const { data: { session } } = await supabaseClient.auth.getSession();
-                const res = await fetch('/api/clientes/localizacao', {
-                    method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${session?.access_token}`
-                    },
-                    body: JSON.stringify({ cnpj, lat, lng })
-                });
-                
-                if (res.ok) {
-                    showToast("Localização salva com sucesso!");
-                    loadClients(); // Atualiza a lista
-                } else {
-                    const errData = await res.json();
-                    showToast("Erro ao salvar: " + (errData.detail || "Tente novamente"), "error");
-                }
-            } catch (err) {
-                showToast("Erro de conexão.", "error");
-            } finally {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = originalHtml;
-                }
+            if (locationPickerMap && locationPickerMarker) {
+                locationPickerMap.setView([lat, lng], 16);
+                locationPickerMarker.setLatLng([lat, lng]);
+                updateSelectedCoords(lat, lng);
             }
+            if (gpsBtn) {
+                gpsBtn.disabled = false;
+                gpsBtn.innerHTML = originalHtml;
+            }
+            showToast("Localização GPS obtida!");
         },
         (err) => {
             showToast("Erro ao obter GPS. Certifique-se de que a localização está ativada.", "error");
-            if (btn) {
-                btn.disabled = false;
-                btn.innerHTML = originalHtml;
+            if (gpsBtn) {
+                gpsBtn.disabled = false;
+                gpsBtn.innerHTML = originalHtml;
             }
         },
         { timeout: 7000, enableHighAccuracy: true }
     );
+}
+
+async function saveManualLocation() {
+    if (!currentPickerCnpj || !pickerSelectedCoords) {
+        showToast("Selecione um local no mapa antes de salvar.", "error");
+        return;
+    }
+    
+    const saveBtn = document.getElementById('save-location-btn');
+    let originalHtml = "";
+    if (saveBtn) {
+        originalHtml = saveBtn.innerHTML;
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
+    }
+    
+    const { lat, lng } = pickerSelectedCoords;
+    const cnpj = currentPickerCnpj;
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch('/api/clientes/localizacao', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session?.access_token}`
+            },
+            body: JSON.stringify({ cnpj, lat, lng })
+        });
+        
+        if (res.ok) {
+            showToast("Localização salva com sucesso!");
+            closeLocationPickerModal();
+            loadClients(); // Atualiza a lista
+        } else {
+            const errData = await res.json();
+            showToast("Erro ao salvar: " + (errData.detail || "Tente novamente"), "error");
+        }
+    } catch (err) {
+        showToast("Erro de conexão.", "error");
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalHtml;
+        }
+    }
+}
+
+function closeLocationPickerModal() {
+    const modal = document.getElementById('location-picker-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    currentPickerCnpj = null;
+    pickerSelectedCoords = null;
+    // Não destruímos totalmente o mapa para poder reutilizar, apenas fechamos o modal.
 }
 
 async function deleteClientLocation(cnpj) {
