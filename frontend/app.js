@@ -894,8 +894,8 @@ function renderClientsList(clients) {
                     ${isAdmin ? `
                         <div style="display: flex; gap: 4px;">
                             ${hasLocation ? `
-                                <button onclick="deleteClientLocation('${c.cnpj}')" class="btn btn-outline" style="border: none; color: #ff9800; padding: 4px 6px; width: auto; font-size: 0.9rem; background: transparent; cursor: pointer; display: inline-flex;" title="Limpar Coordenadas do GPS">
-                                    <i class="fas fa-map-marker-alt" style="text-decoration: line-through;"></i>
+                                <button onclick="registerClientLocation('${c.cnpj}')" class="btn btn-outline" style="border: none; color: #ff9800; padding: 4px 6px; width: auto; font-size: 0.9rem; background: transparent; cursor: pointer; display: inline-flex;" title="Ajustar Pin da Localização">
+                                    <i class="fas fa-map-marker-alt"></i>
                                 </button>
                             ` : ''}
                             <button onclick="deleteClient('${c.cnpj}')" class="btn btn-outline" style="border: none; color: var(--danger); padding: 4px 6px; width: auto; font-size: 0.9rem; background: transparent; cursor: pointer; display: inline-flex;" title="Excluir Cliente do Sistema">
