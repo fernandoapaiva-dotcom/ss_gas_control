@@ -549,8 +549,6 @@ async function handlePhotoSelected(e, id) {
             showToast("Erro de conexão no upload", "error");
             photoDiv.remove();
         }
-    };
-    input.click();
 }
 
 async function deleteTempPhoto(photoId, fileId) {
