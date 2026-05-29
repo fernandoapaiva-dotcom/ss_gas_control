@@ -47,4 +47,5 @@ class CilindroAplicado(Base):
     data_validade = Column(String, nullable=True)
     url_foto = Column(String, nullable=True)
     observacao = Column(String, nullable=True)
+    marca = Column(String, nullable=True)
     entrega = relationship("Entrega", back_populates="cilindros")

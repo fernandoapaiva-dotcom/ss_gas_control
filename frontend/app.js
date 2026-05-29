@@ -299,13 +299,41 @@ function showView(viewId) {
     }
 }
 
+function getMarcasOptions(selectedMarca) {
+    let marcas = JSON.parse(localStorage.getItem('gas_marcas') || '["White Martins", "IBG", "Air Liquide", "Messer"]');
+    if (selectedMarca && !marcas.includes(selectedMarca)) {
+        marcas.push(selectedMarca);
+        localStorage.setItem('gas_marcas', JSON.stringify(marcas));
+    }
+    return marcas.map(m => `<option value="${m}" ${m === selectedMarca ? 'selected' : ''}>${m}</option>`).join('');
+}
+
+function handleMarcaChange(selectEl) {
+    if (selectEl.value === 'NOVA_MARCA') {
+        const nova = prompt('Digite o nome da nova marca:');
+        if (nova && nova.trim() !== '') {
+            let marcas = JSON.parse(localStorage.getItem('gas_marcas') || '["White Martins", "IBG", "Air Liquide", "Messer"]');
+            if (!marcas.includes(nova.trim())) {
+                marcas.push(nova.trim());
+                localStorage.setItem('gas_marcas', JSON.stringify(marcas));
+            }
+            const currentVal = nova.trim();
+            selectEl.innerHTML = '<option value="">Selecione a marca...</option>' + getMarcasOptions(currentVal) + '<option value="NOVA_MARCA">+ Adicionar Nova Marca</option>';
+            selectEl.value = currentVal;
+        } else {
+            selectEl.value = '';
+        }
+    }
+}
+
 let itemCounter = 0;
 function addItem(data = null) {
     const container = document.getElementById('items-container');
     const div = document.createElement('div');
     div.className = 'card item-card';
+    div.id = `cilindro-${++itemCounter}`;
+    const id = itemCounter;
     div.style.marginBottom = '1rem';
-    const id = ++itemCounter;
     div.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <b>Cilindro #${id}</b>
@@ -324,13 +352,47 @@ function addItem(data = null) {
             <option value="10m3">10m\u00b3</option><option value="1kg">1 kg</option><option value="9kg">9 kg</option>
             <option value="13kg">13 kg</option><option value="25kg">25 kg</option><option value="45kg">45 kg</option>
         </select>
+        <div style="margin-top:0.5rem;">
+            <label style="font-size:0.8rem; font-weight:bold; color:#666;">Marca:</label>
+            <select class="form-control" name="marca" onchange="handleMarcaChange(this); saveDraft()">
+                <option value="">Selecione a marca...</option>
+                ${getMarcasOptions(data ? data.marca : '')}
+                <option value="NOVA_MARCA">+ Adicionar Nova Marca</option>
+            </select>
+        </div>
+        <div style="margin-top:0.5rem;">
+            <label style="font-size:0.8rem; font-weight:bold; color:#666;">Data de Validade (Mês/Ano):</label>
+            <input type="month" class="form-control" name="validade" id="validade-${id}" value="${data?data.validade:''}" onchange="updateValidadeInfo(${id}); saveDraft()">
+            <div id="validade-info-${id}" style="color:#d32f2f; font-size:0.8rem; font-weight:bold; margin-top:2px;"></div>
+        </div>
         <input type="text" class="form-control cil-obs" placeholder="Observa\u00e7\u00e3o..." style="margin-top:0.5rem;" value="${data?data.obs:''}" oninput="saveDraft()">
         <div id="photos-${id}" style="display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin-top:5px;"></div>
         
-        <button type="button" class="btn btn-outline" style="width:100%; margin-top:5px; font-size:0.8rem;" onclick="addPhoto(${id})">Adicionar Foto</button>
+        <div style="display:flex; gap:5px; margin-top:5px;">
+            <button type="button" class="btn btn-outline" style="flex:1; font-size:0.8rem;" onclick="document.getElementById('photo-input-${id}').removeAttribute('capture'); document.getElementById('photo-input-${id}').click();">
+                <i class="fas fa-images"></i> Galeria
+            </button>
+            <button type="button" class="btn btn-outline" style="flex:1; font-size:0.8rem;" onclick="document.getElementById('photo-input-${id}').setAttribute('capture', 'environment'); document.getElementById('photo-input-${id}').click();">
+                <i class="fas fa-camera"></i> Câmera
+            </button>
+        </div>
+        <input 
+            type="file" 
+            id="photo-input-${id}" 
+            accept="image/*" 
+            capture="environment"
+            style="position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; pointer-events:none;"
+            onchange="handlePhotoSelected(event, ${id})"
+        >
     `;
     container.appendChild(div);
     if (data) { div.querySelector('[name="tipo_gas"]').value = data.tipo_gas; div.querySelector('[name="tamanho_gas"]').value = data.tamanho_gas; }
+    
+    // Add event listener to gas type to re-calculate when changed
+    div.querySelector('[name="tipo_gas"]').addEventListener('change', () => updateValidadeInfo(id));
+    
+    // Initialize calculation
+    setTimeout(() => updateValidadeInfo(id), 100);
 }
 
 function compressImage(file, maxWidth, maxHeight, quality) {
@@ -372,19 +434,12 @@ function compressImage(file, maxWidth, maxHeight, quality) {
     });
 }
 
-function addPhoto(id) {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.setAttribute('capture', 'environment');
-    input.capture = 'environment';
-    
-    input.onchange = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
+async function handlePhotoSelected(e, id) {
+    const file = e.target.files[0];
+    if (!file) return;
 
-        const photoId = 'photo-' + Date.now();
-        const container = document.getElementById(`photos-${id}`);
+    const photoId = 'photo-' + Date.now();
+    const container = document.getElementById(`photos-${id}`);
         
         const photoDiv = document.createElement('div');
         photoDiv.id = photoId;
@@ -533,7 +588,9 @@ async function submitDelivery(whatsappPhone = null, btn, originalText) {
             tipo_gas: card.querySelector('[name="tipo_gas"]').value,
             tamanho_gas: card.querySelector('[name="tamanho_gas"]').value,
             qtd: card.querySelector('[name="qtd"]').value,
-            obs: card.querySelector('.cil-obs').value
+            obs: card.querySelector('.cil-obs').value,
+            validade: card.querySelector('[name="validade"]') ? card.querySelector('[name="validade"]').value : '',
+            marca: card.querySelector('[name="marca"]') ? card.querySelector('[name="marca"]').value : ''
         }))
     };
     
@@ -757,6 +814,59 @@ async function deleteDelivery(id) {
     } catch (e) { showToast("Erro de conexão", "error"); }
 }
 
+const VALIDADE_ANOS = {
+    "ACETILENO": 10,
+    "ARGONIO": 10,
+    "CO2": 5,
+    "GLP": 5,
+    "MISTURA": 5,
+    "NITROGENIO": 10,
+    "OXIGENIO": 10
+};
+
+function getValidadeMsg(val, tipo_gas) {
+    if (!val || val === '-') return '';
+    let anos_adicionais = 0;
+    if (tipo_gas) {
+        let t = tipo_gas.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+        if (VALIDADE_ANOS[t]) anos_adicionais = VALIDADE_ANOS[t];
+    }
+
+    let d;
+    if (val.length === 7 && val.includes('-')) {
+        let parts = val.split('-');
+        d = new Date(parseInt(parts[0]) + anos_adicionais, parseInt(parts[1]), 0); // Último dia do mês
+    } else if (val.length === 10 && val.includes('-')) {
+        let parts = val.split('-');
+        d = new Date(parseInt(parts[0]) + anos_adicionais, parseInt(parts[1])-1, parseInt(parts[2]));
+    } else {
+        return '';
+    }
+    let today = new Date();
+    today.setHours(0,0,0,0);
+    let diffTime = d.getTime() - today.getTime();
+    let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    // Calcula ano efetivo para mostrar na msg
+    let anoStr = d.getFullYear();
+    let mesStr = (d.getMonth() + 1).toString().padStart(2, '0');
+    
+    if (diffDays > 0) return `-> Vence em ${mesStr}/${anoStr} (faltam ${diffDays} dias)`;
+    if (diffDays === 0) return `-> Vence neste mês/hoje!`;
+    return `-> Venceu em ${mesStr}/${anoStr} (vencido há ${Math.abs(diffDays)} dias)`;
+}
+
+function updateValidadeInfo(id) {
+    const card = document.getElementById(`cilindro-${id}`);
+    if (!card) return;
+    const gasEl = card.querySelector('[name="tipo_gas"]');
+    const valEl = document.getElementById(`validade-${id}`);
+    const infoEl = document.getElementById(`validade-info-${id}`);
+    if (gasEl && valEl && infoEl) {
+        infoEl.innerText = getValidadeMsg(valEl.value, gasEl.value);
+    }
+}
+
 async function loadHistory() {
     const resDiv = document.getElementById('history-results');
     if (!resDiv) return;
@@ -796,7 +906,8 @@ async function loadHistory() {
                     <p style="font-size:0.85rem; font-weight:600; color:var(--primary); margin-bottom:8px;">Itens da Entrega:</p>
                     ${(item.itens || []).map(i => `
                         <div style="font-size:0.8rem; background:#f9f9f9; padding:8px; border-radius:6px; margin-bottom:6px; border:1px solid #eee;">
-                            <b>${i.qtd || 1}x ${i.gas || 'Gás'} (${i.tam || 'Tam n/a'})</b>
+                            <b>${i.qtd || 1}x ${i.gas || 'Gás'} (${i.tam || 'Tam n/a'})</b> ${i.marca ? `<span style="color:#2e7d32; font-weight:600;">[${i.marca}]</span>` : ''}
+                            ${i.validade && i.validade !== '-' ? `<div style="color:#d32f2f; font-size:0.75rem; margin-top:3px; font-weight:600;"><i class="fas fa-calendar-times"></i> ${i.validade.includes('-') && i.validade.length === 10 ? new Date(i.validade + 'T00:00:00').toLocaleDateString('pt-BR') : (i.validade.includes('-') ? i.validade.split('-').reverse().join('/') : i.validade)} <span style="margin-left:5px;">${getValidadeMsg(i.validade, i.gas)}</span></div>` : ''}
                             ${i.obs ? `<div style="color:#777; font-size:0.75rem; margin-top:3px; font-style:italic;">Obs: ${i.obs}</div>` : ''}
                         </div>
                     `).join('') || '<p style="font-size:0.8rem; color:#999;">Sem detalhes de itens.</p>'}
@@ -1674,5 +1785,25 @@ function checkInitialNetwork() {
     }
 }
 
+async function syncMarcas() {
+    try {
+        const res = await fetch('/api/marcas');
+        if (res.ok) {
+            const dbMarcas = await res.json();
+            let localMarcas = JSON.parse(localStorage.getItem('gas_marcas') || '["White Martins", "IBG", "Air Liquide", "Messer"]');
+            
+            // remove empty strings if any
+            localMarcas = localMarcas.filter(m => m.trim() !== '');
+            let dbClean = dbMarcas.filter(m => m && m.trim() !== '');
+            
+            let all = [...new Set([...localMarcas, ...dbClean])];
+            localStorage.setItem('gas_marcas', JSON.stringify(all));
+        }
+    } catch(e) {
+        console.log("Offline: couldn't sync marcas");
+    }
+}
+
 initSupabase();
 checkInitialNetwork();
+syncMarcas();
