@@ -253,6 +253,32 @@ async function handleAuthSuccess(user, session) {
         checkGoogleDriveStatus();
     }
     
+    // Check for Google OAuth callback parameters in hash
+    const hash = window.location.hash;
+    if (hash.includes('gdrive_oauth=')) {
+        const urlParams = new URLSearchParams(hash.split('?')[1]);
+        const status = urlParams.get('gdrive_oauth');
+        const detail = urlParams.get('detail');
+        
+        // Remove parameters from URL hash
+        window.location.hash = hash.split('?')[0];
+        
+        // Force view to admin-view
+        localStorage.setItem('active_view', 'admin-view');
+        
+        setTimeout(() => {
+            if (status === 'success') {
+                showToast("Conta do Google vinculada e token gerado com sucesso!", "success");
+                checkGoogleDriveStatus();
+                loadGoogleDriveConfig();
+            } else if (status === 'warning_no_refresh') {
+                showToast("Conta vinculada, mas o Google não enviou o refresh token. Tente desconectar e conectar novamente.", "warning");
+            } else {
+                showToast("Erro na autenticação do Google: " + (detail || "desconhecido"), "error");
+            }
+        }, 500);
+    }
+    
     const savedView = localStorage.getItem('active_view');
     if (savedView && savedView !== 'login-view') {
         showView(savedView);
@@ -996,6 +1022,44 @@ async function testGoogleDriveConfig() {
     } finally {
         testBtn.disabled = false;
         testBtn.innerHTML = originalText;
+    }
+}
+
+async function loginGoogleDriveOAuth() {
+    const oauthBtn = document.getElementById('gdrive-oauth-btn');
+    const originalText = oauthBtn.innerHTML;
+    
+    // First, save configuration to ensure current Client ID/Secret are used
+    await saveGoogleDriveConfig();
+    
+    oauthBtn.disabled = true;
+    oauthBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Redirecionando...';
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch('/api/admin/google-drive/auth-url', {
+            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        });
+        
+        if (res.ok) {
+            const data = await res.json();
+            if (data.url) {
+                window.location.href = data.url;
+            } else {
+                showToast("Erro ao gerar URL de autorização", "error");
+                oauthBtn.disabled = false;
+                oauthBtn.innerHTML = originalText;
+            }
+        } else {
+            const errData = await res.json().catch(() => ({}));
+            showToast("Erro: " + (errData.detail || "Não foi possível iniciar o login"), "error");
+            oauthBtn.disabled = false;
+            oauthBtn.innerHTML = originalText;
+        }
+    } catch (err) {
+        showToast("Falha de conexão: " + err.message, "error");
+        oauthBtn.disabled = false;
+        oauthBtn.innerHTML = originalText;
     }
 }
 

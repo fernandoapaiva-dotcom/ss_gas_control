@@ -14,7 +14,8 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from supabase import create_client, Client
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
+import urllib.parse
 from PIL import Image
 
 # --- Evolution API CONFIG ---
@@ -729,6 +730,75 @@ async def delete_cliente(cnpj: str, db: Session = Depends(get_db), current_user:
     db.delete(cliente)
     db.commit()
     return {"status": "deleted"}
+
+@app.get("/api/admin/google-drive/auth-url")
+async def get_google_drive_auth_url(request: Request, current_user: dict = Depends(get_current_user)):
+    if current_user.get("nivel_acesso") != "adm":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    config = get_google_config()
+    client_id = config.get("GOOGLE_CLIENT_ID")
+    if not client_id:
+        raise HTTPException(status_code=400, detail="Google Client ID não configurado nas configurações.")
+        
+    redirect_uri = str(request.base_url).rstrip('/') + '/api/admin/google-drive/callback'
+    
+    scopes = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive"
+    
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": scopes,
+        "access_type": "offline",
+        "prompt": "consent"
+    }
+    
+    url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
+    return {"url": url}
+
+@app.get("/api/admin/google-drive/callback")
+async def google_drive_callback(request: Request, code: str, state: Optional[str] = None):
+    config = get_google_config()
+    client_id = config.get("GOOGLE_CLIENT_ID")
+    client_secret = config.get("GOOGLE_CLIENT_SECRET")
+    
+    if not client_id or not client_secret:
+        raise HTTPException(status_code=400, detail="Configurações do Google (Client ID ou Secret) incompletas no servidor.")
+        
+    redirect_uri = str(request.base_url).rstrip('/') + '/api/admin/google-drive/callback'
+    
+    # Exchange code for token
+    token_url = "https://oauth2.googleapis.com/token"
+    payload = {
+        "code": code,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": redirect_uri,
+        "grant_type": "authorization_code"
+    }
+    
+    async with httpx.AsyncClient() as client:
+        res = await client.post(token_url, data=payload)
+        if res.status_code != 200:
+            return RedirectResponse(url="/#admin-view?gdrive_oauth=error&detail=" + urllib.parse.quote(res.text))
+            
+        data = res.json()
+        refresh_token = data.get("refresh_token")
+        
+        if not refresh_token:
+            return RedirectResponse(url="/#admin-view?gdrive_oauth=warning_no_refresh")
+            
+        # Update config with the new refresh token
+        config["GOOGLE_REFRESH_TOKEN"] = refresh_token
+        
+        try:
+            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=4)
+        except Exception as e:
+            return RedirectResponse(url="/#admin-view?gdrive_oauth=error&detail=" + urllib.parse.quote(f"Erro ao salvar arquivo: {str(e)}"))
+            
+    return RedirectResponse(url="/#admin-view?gdrive_oauth=success")
 
 @app.get("/api/admin/google-drive-config")
 async def get_google_drive_config(current_user: dict = Depends(get_current_user)):
