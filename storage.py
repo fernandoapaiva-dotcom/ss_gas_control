@@ -1,6 +1,7 @@
 import os
 import json
 from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -14,16 +15,20 @@ def get_google_config():
         'GOOGLE_CLIENT_ID': os.getenv('GOOGLE_CLIENT_ID') or '',
         'GOOGLE_CLIENT_SECRET': os.getenv('GOOGLE_CLIENT_SECRET') or '',
         'GOOGLE_REFRESH_TOKEN': os.getenv('GOOGLE_REFRESH_TOKEN') or '',
-        'DRIVE_ROOT_FOLDER_ID': os.getenv('DRIVE_ROOT_FOLDER_ID') or ''
+        'DRIVE_ROOT_FOLDER_ID': os.getenv('DRIVE_ROOT_FOLDER_ID') or '',
+        'USE_SERVICE_ACCOUNT': False
     }
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 for k in config.keys():
-                    val = data.get(k) or data.get(k.replace('GOOGLE_', ''))
-                    if val:
-                        config[k] = val
+                    if k == 'USE_SERVICE_ACCOUNT':
+                        config[k] = bool(data.get(k, False))
+                    else:
+                        val = data.get(k) or data.get(k.replace('GOOGLE_', ''))
+                        if val:
+                            config[k] = val
         except Exception as e:
             print(f"[CONFIG] Erro ao ler google_config.json: {e}")
     return config
@@ -35,6 +40,20 @@ def get_drive_service(custom_config=None):
     print(f"[RASTREIO] Iniciando get_drive_service...")
     
     config = custom_config or get_google_config()
+    
+    # Se for para usar Conta de Serviço
+    if config.get('USE_SERVICE_ACCOUNT'):
+        print("[RASTREIO] Usando Conta de Serviço para autenticação...")
+        service_account_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'service-account.json')
+        if not os.path.exists(service_account_path):
+            raise FileNotFoundError("Arquivo service-account.json não encontrado no servidor. Por favor, coloque-o na raiz do projeto.")
+            
+        SCOPES = ['https://www.googleapis.com/auth/drive']
+        creds = service_account.Credentials.from_service_account_file(
+            service_account_path, scopes=SCOPES
+        )
+        return build('drive', 'v3', credentials=creds)
+        
     client_id = config.get('GOOGLE_CLIENT_ID')
     client_secret = config.get('GOOGLE_CLIENT_SECRET')
     refresh_token = config.get('GOOGLE_REFRESH_TOKEN')

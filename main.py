@@ -740,7 +740,8 @@ async def get_google_drive_config(current_user: dict = Depends(get_current_user)
         "GOOGLE_CLIENT_ID": config.get("GOOGLE_CLIENT_ID", ""),
         "GOOGLE_CLIENT_SECRET": config.get("GOOGLE_CLIENT_SECRET", ""),
         "GOOGLE_REFRESH_TOKEN": config.get("GOOGLE_REFRESH_TOKEN", ""),
-        "DRIVE_ROOT_FOLDER_ID": config.get("DRIVE_ROOT_FOLDER_ID", "")
+        "DRIVE_ROOT_FOLDER_ID": config.get("DRIVE_ROOT_FOLDER_ID", ""),
+        "USE_SERVICE_ACCOUNT": config.get("USE_SERVICE_ACCOUNT", False)
     }
 
 @app.post("/api/admin/google-drive-config")
@@ -752,7 +753,8 @@ async def save_google_drive_config(payload: dict, current_user: dict = Depends(g
         "GOOGLE_CLIENT_ID": payload.get("GOOGLE_CLIENT_ID", "").strip(),
         "GOOGLE_CLIENT_SECRET": payload.get("GOOGLE_CLIENT_SECRET", "").strip(),
         "GOOGLE_REFRESH_TOKEN": payload.get("GOOGLE_REFRESH_TOKEN", "").strip(),
-        "DRIVE_ROOT_FOLDER_ID": payload.get("DRIVE_ROOT_FOLDER_ID", "").strip()
+        "DRIVE_ROOT_FOLDER_ID": payload.get("DRIVE_ROOT_FOLDER_ID", "").strip(),
+        "USE_SERVICE_ACCOUNT": bool(payload.get("USE_SERVICE_ACCOUNT", False))
     }
     
     try:
@@ -771,7 +773,8 @@ async def test_google_drive_config(payload: dict, current_user: dict = Depends(g
         "GOOGLE_CLIENT_ID": payload.get("GOOGLE_CLIENT_ID", "").strip(),
         "GOOGLE_CLIENT_SECRET": payload.get("GOOGLE_CLIENT_SECRET", "").strip(),
         "GOOGLE_REFRESH_TOKEN": payload.get("GOOGLE_REFRESH_TOKEN", "").strip(),
-        "DRIVE_ROOT_FOLDER_ID": payload.get("DRIVE_ROOT_FOLDER_ID", "").strip()
+        "DRIVE_ROOT_FOLDER_ID": payload.get("DRIVE_ROOT_FOLDER_ID", "").strip(),
+        "USE_SERVICE_ACCOUNT": bool(payload.get("USE_SERVICE_ACCOUNT", False))
     }
     
     try:
@@ -784,7 +787,9 @@ async def test_google_drive_config(payload: dict, current_user: dict = Depends(g
         return {"status": "success", "message": "Conexão com Google Drive realizada com sucesso! Pasta raiz encontrada."}
     except Exception as e:
         err_msg = str(e)
-        if "invalid_grant" in err_msg or "expired or revoked" in err_msg:
+        if "service-account.json" in err_msg or "FileNotFoundError" in err_msg:
+            err_msg = "Arquivo service-account.json não encontrado no servidor."
+        elif "invalid_grant" in err_msg or "expired or revoked" in err_msg:
             err_msg = "Token expirado ou revogado. Por favor, gere um novo refresh token."
         elif "client_id" in err_msg or "client_secret" in err_msg:
             err_msg = "Client ID ou Client Secret incorretos."

@@ -806,6 +806,26 @@ async function disconnectWhatsApp() {
     }
 }
 
+function toggleGoogleDriveAuthFields() {
+    const useSA = document.getElementById('gdrive-use-service-account').checked;
+    const oauthFields = document.getElementById('gdrive-oauth-fields');
+    const saInfo = document.getElementById('gdrive-service-account-info');
+    
+    if (useSA) {
+        oauthFields.style.display = 'none';
+        saInfo.style.display = 'block';
+        document.getElementById('gdrive-client-id').removeAttribute('required');
+        document.getElementById('gdrive-client-secret').removeAttribute('required');
+        document.getElementById('gdrive-refresh-token').removeAttribute('required');
+    } else {
+        oauthFields.style.display = 'block';
+        saInfo.style.display = 'none';
+        document.getElementById('gdrive-client-id').setAttribute('required', 'true');
+        document.getElementById('gdrive-client-secret').setAttribute('required', 'true');
+        document.getElementById('gdrive-refresh-token').setAttribute('required', 'true');
+    }
+}
+
 async function loadGoogleDriveConfig() {
     const statusMsg = document.getElementById('gdrive-status-message');
     if (statusMsg) statusMsg.style.display = 'none';
@@ -817,10 +837,12 @@ async function loadGoogleDriveConfig() {
         });
         if (res.ok) {
             const data = await res.json();
+            document.getElementById('gdrive-use-service-account').checked = !!data.USE_SERVICE_ACCOUNT;
             document.getElementById('gdrive-client-id').value = data.GOOGLE_CLIENT_ID || '';
             document.getElementById('gdrive-client-secret').value = data.GOOGLE_CLIENT_SECRET || '';
             document.getElementById('gdrive-refresh-token').value = data.GOOGLE_REFRESH_TOKEN || '';
             document.getElementById('gdrive-root-folder-id').value = data.DRIVE_ROOT_FOLDER_ID || '';
+            toggleGoogleDriveAuthFields();
         } else {
             console.error("Erro ao carregar configurações do Google Drive");
         }
@@ -838,6 +860,7 @@ async function saveGoogleDriveConfig(e) {
     saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
     
     const payload = {
+        USE_SERVICE_ACCOUNT: document.getElementById('gdrive-use-service-account').checked,
         GOOGLE_CLIENT_ID: document.getElementById('gdrive-client-id').value.trim(),
         GOOGLE_CLIENT_SECRET: document.getElementById('gdrive-client-secret').value.trim(),
         GOOGLE_REFRESH_TOKEN: document.getElementById('gdrive-refresh-token').value.trim(),
@@ -885,6 +908,7 @@ async function testGoogleDriveConfig() {
     testBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testando...';
     
     const payload = {
+        USE_SERVICE_ACCOUNT: document.getElementById('gdrive-use-service-account').checked,
         GOOGLE_CLIENT_ID: document.getElementById('gdrive-client-id').value.trim(),
         GOOGLE_CLIENT_SECRET: document.getElementById('gdrive-client-secret').value.trim(),
         GOOGLE_REFRESH_TOKEN: document.getElementById('gdrive-refresh-token').value.trim(),
