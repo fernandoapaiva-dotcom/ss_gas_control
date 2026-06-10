@@ -888,6 +888,11 @@ async function loadGoogleDriveConfig() {
     const statusMsg = document.getElementById('gdrive-status-message');
     if (statusMsg) statusMsg.style.display = 'none';
     
+    const redirectUriDisplay = document.getElementById('gdrive-redirect-uri-display');
+    if (redirectUriDisplay) {
+        redirectUriDisplay.innerText = window.location.origin + '/api/admin/google-drive/callback';
+    }
+    
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
         const res = await fetch('/api/admin/google-drive-config', {

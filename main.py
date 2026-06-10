@@ -741,7 +741,10 @@ async def get_google_drive_auth_url(request: Request, current_user: dict = Depen
     if not client_id:
         raise HTTPException(status_code=400, detail="Google Client ID não configurado nas configurações.")
         
-    redirect_uri = str(request.base_url).rstrip('/') + '/api/admin/google-drive/callback'
+    base_url = str(request.base_url).rstrip('/')
+    if request.headers.get("x-forwarded-proto") == "https":
+        base_url = base_url.replace("http://", "https://")
+    redirect_uri = base_url + '/api/admin/google-drive/callback'
     
     scopes = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive"
     
@@ -766,7 +769,10 @@ async def google_drive_callback(request: Request, code: str, state: Optional[str
     if not client_id or not client_secret:
         raise HTTPException(status_code=400, detail="Configurações do Google (Client ID ou Secret) incompletas no servidor.")
         
-    redirect_uri = str(request.base_url).rstrip('/') + '/api/admin/google-drive/callback'
+    base_url = str(request.base_url).rstrip('/')
+    if request.headers.get("x-forwarded-proto") == "https":
+        base_url = base_url.replace("http://", "https://")
+    redirect_uri = base_url + '/api/admin/google-drive/callback'
     
     # Exchange code for token
     token_url = "https://oauth2.googleapis.com/token"

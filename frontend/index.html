@@ -273,10 +273,13 @@
                         </div>
 
                         <div id="gdrive-oauth-instructions" style="margin-top: 1.25rem; padding: 12px; border-radius: 8px; background: #f8f9fa; border: 1px solid #e9ecef; font-size: 0.82rem; line-height: 1.4; color: #555; text-align: left;">
-                            <span style="font-weight: 600; color: var(--dark); display: block; margin-bottom: 6px;"><i class="fas fa-info-circle"></i> Links Rápidos para Renovar o OAuth2:</span>
-                            1. Acesse as <a href="https://console.cloud.google.com/apis/credentials?project=ss-gas-control" target="_blank" style="color: #4285F4; font-weight: 600; text-decoration: none;"><i class="fas fa-external-link-alt"></i> Credenciais no Google Cloud</a>.<br>
-                            2. Verifique o status na <a href="https://console.cloud.google.com/apis/consent?project=ss-gas-control" target="_blank" style="color: #4285F4; font-weight: 600; text-decoration: none;"><i class="fas fa-external-link-alt"></i> Tela de consentimento OAuth</a> (deve estar <b>Em Produção</b>).<br>
-                            3. Execute o script `get_token.py` no seu computador para gerar o novo token e cole-o no campo de Refresh Token acima.
+                            <span style="font-weight: 600; color: var(--dark); display: block; margin-bottom: 6px;"><i class="fas fa-info-circle"></i> Configuração e Renovação do OAuth2:</span>
+                            <p style="margin: 0 0 8px 0;">O botão "Gerar Token (Web)" exige que sua credencial no Google Cloud Console seja do tipo <b>Web application</b> (Aplicativo da Web).</p>
+                            <p style="margin: 0 0 8px 0;">1. Acesse as <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color: #4285F4; font-weight: 600; text-decoration: none;"><i class="fas fa-external-link-alt"></i> Credenciais no Google Cloud</a>.</p>
+                            <p style="margin: 0 0 8px 0;">2. Em "URIs de redirecionamento autorizados", adicione exatamente este link:<br>
+                            <code id="gdrive-redirect-uri-display" style="display: inline-block; background: #e9ecef; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight: bold; margin-top: 4px; word-break: break-all;">Carregando...</code></p>
+                            <p style="margin: 0 0 8px 0;">3. Garanta que o status na <a href="https://console.cloud.google.com/apis/consent" target="_blank" style="color: #4285F4; font-weight: 600; text-decoration: none;"><i class="fas fa-external-link-alt"></i> Tela de consentimento OAuth</a> esteja configurado como <b>Em Produção</b>.</p>
+                            <p style="margin: 0;"><i>Nota: Se preferir não usar o fluxo web, você ainda pode rodar o script local `get_token.py` no seu computador e colar manualmente o Refresh Token gerado no campo acima.</i></p>
                         </div>
                     </form>
                 </div>
