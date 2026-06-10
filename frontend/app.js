@@ -296,6 +296,7 @@ function showView(viewId) {
     if (viewId === 'admin-view') {
         loadUsers();
         checkWhatsAppStatus();
+        loadGoogleDriveConfig();
     }
 }
 
@@ -312,7 +313,7 @@ function addItem(data = null) {
             <button type="button" onclick="this.closest('.item-card').remove(); saveDraft();" style="color:red; border:none; background:none; font-size:1.2rem;">&times;</button>
         </div>
         <div class="filter-grid" style="margin-top:0.5rem;">
-            <select class="form-control" name="tipo_gas" onchange="saveDraft()">
+            <select class="form-control" name="tipo_gas" onchange="calcularVencimentoElement(this)">
                 <option value="Oxig\u00eanio">Oxig\u00eanio</option><option value="Acetileno">Acetileno</option>
                 <option value="Arg\u00f4nio">Arg\u00f4nio</option><option value="Mistura">Mistura</option>
                 <option value="CO2">CO2</option><option value="Nitroge\u0302nio">Nitrog\u00eanio</option><option value="GLP">GLP</option>
@@ -324,7 +325,13 @@ function addItem(data = null) {
             <option value="10m3">10m\u00b3</option><option value="1kg">1 kg</option><option value="9kg">9 kg</option>
             <option value="13kg">13 kg</option><option value="25kg">25 kg</option><option value="45kg">45 kg</option>
         </select>
-        <input type="text" class="form-control cil-obs" placeholder="Observa\u00e7\u00e3o..." style="margin-top:0.5rem;" value="${data?data.obs:''}" oninput="saveDraft()">
+        <div style="display:flex; gap:10px; margin-top:0.5rem;">
+            <div style="flex:1;">
+                <input type="month" class="form-control cil-validade" style="width:100%;" value="${data?data.validade:''}" oninput="calcularVencimentoElement(this)">
+                <div class="cil-vencimento-msg" style="font-size:0.75rem; color:#777; margin-top:3px; line-height:1.2;"></div>
+            </div>
+            <input type="text" class="form-control cil-obs" placeholder="Observa\u00e7\u00e3o..." style="flex:1;" value="${data?data.obs:''}" oninput="saveDraft()">
+        </div>
         <div id="photos-${id}" style="display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin-top:5px;"></div>
         
         <div style="display:flex; gap:8px; margin-top:5px;">
@@ -338,6 +345,61 @@ function addItem(data = null) {
     `;
     container.appendChild(div);
     if (data) { div.querySelector('[name="tipo_gas"]').value = data.tipo_gas; div.querySelector('[name="tamanho_gas"]').value = data.tamanho_gas; }
+    calcularVencimentoElement(div.querySelector('.cil-validade'));
+}
+
+function formatValidadeText(dataTestStr, tipoGas) {
+    if (!dataTestStr || !dataTestStr.includes('-')) return '';
+    let validadeAnos = 10;
+    if (tipoGas) {
+        const gas = tipoGas.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "");
+        if (gas.includes('acetileno') || gas.includes('co2')) validadeAnos = 5;
+        else if (gas.includes('glp')) validadeAnos = 15;
+    }
+    
+    const parts = dataTestStr.split('-');
+    const testYear = parseInt(parts[0], 10);
+    const testMonth = parseInt(parts[1], 10);
+    const expYear = testYear + validadeAnos;
+    const now = new Date();
+    
+    let diffMonths = (expYear - now.getFullYear()) * 12 + (testMonth - 1 - now.getMonth());
+    let txt = '';
+    let color = '#777';
+    if (diffMonths < 0) {
+        diffMonths = Math.abs(diffMonths);
+        let anos = Math.floor(diffMonths / 12);
+        let meses = diffMonths % 12;
+        txt = `Vencido há ${anos > 0 ? anos + ' ano(s) e ' : ''}${meses} mes(es) (Venceu em ${testMonth.toString().padStart(2, '0')}/${expYear})`;
+        color = 'red';
+    } else {
+        let anos = Math.floor(diffMonths / 12);
+        let meses = diffMonths % 12;
+        txt = `Vence em ${anos > 0 ? anos + ' ano(s) e ' : ''}${meses} mes(es) (Vence em ${testMonth.toString().padStart(2, '0')}/${expYear})`;
+    }
+    return { txt, color };
+}
+
+function calcularVencimentoElement(el) {
+    if (typeof saveDraft === 'function') saveDraft();
+    const card = el.closest('.item-card');
+    if (!card) return;
+    const tipoGas = card.querySelector('[name="tipo_gas"]').value;
+    const dateInput = card.querySelector('.cil-validade');
+    const msgDiv = card.querySelector('.cil-vencimento-msg');
+    
+    if (!dateInput || !msgDiv) return;
+    if (!dateInput.value) {
+        msgDiv.innerHTML = '';
+        return;
+    }
+    const res = formatValidadeText(dateInput.value, tipoGas);
+    if (res.txt) {
+        msgDiv.innerHTML = `<i class="fas fa-clock"></i> ` + res.txt;
+        msgDiv.style.color = res.color;
+    } else {
+        msgDiv.innerHTML = '';
+    }
 }
 
 function compressImage(file, maxWidth, maxHeight, quality) {
@@ -495,7 +557,9 @@ function addPhoto(id, mode = 'camera') {
                 photoDiv.appendChild(deleteBtn);
                 saveDraft();
             } else {
-                showToast("Erro ao enviar foto para o Google Drive", "error");
+                const errData = await res.json().catch(() => ({}));
+                const errMsg = errData.detail || "Erro desconhecido";
+                showToast("Erro ao enviar foto para o Google Drive: " + errMsg, "error");
                 photoDiv.remove();
             }
         } catch (err) {
@@ -541,6 +605,7 @@ async function submitDelivery(whatsappPhone = null, btn, originalText) {
             tipo_gas: card.querySelector('[name="tipo_gas"]').value,
             tamanho_gas: card.querySelector('[name="tamanho_gas"]').value,
             qtd: card.querySelector('[name="qtd"]').value,
+            validade: card.querySelector('.cil-validade') ? card.querySelector('.cil-validade').value : '',
             obs: card.querySelector('.cil-obs').value
         }))
     };
@@ -741,6 +806,143 @@ async function disconnectWhatsApp() {
     }
 }
 
+async function loadGoogleDriveConfig() {
+    const statusMsg = document.getElementById('gdrive-status-message');
+    if (statusMsg) statusMsg.style.display = 'none';
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch('/api/admin/google-drive-config', {
+            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            document.getElementById('gdrive-client-id').value = data.GOOGLE_CLIENT_ID || '';
+            document.getElementById('gdrive-client-secret').value = data.GOOGLE_CLIENT_SECRET || '';
+            document.getElementById('gdrive-refresh-token').value = data.GOOGLE_REFRESH_TOKEN || '';
+            document.getElementById('gdrive-root-folder-id').value = data.DRIVE_ROOT_FOLDER_ID || '';
+        } else {
+            console.error("Erro ao carregar configurações do Google Drive");
+        }
+    } catch (err) {
+        console.error("Falha ao carregar configurações do Google Drive:", err);
+    }
+}
+
+async function saveGoogleDriveConfig(e) {
+    if (e) e.preventDefault();
+    
+    const saveBtn = document.getElementById('gdrive-save-btn');
+    const originalText = saveBtn.innerHTML;
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
+    
+    const payload = {
+        GOOGLE_CLIENT_ID: document.getElementById('gdrive-client-id').value.trim(),
+        GOOGLE_CLIENT_SECRET: document.getElementById('gdrive-client-secret').value.trim(),
+        GOOGLE_REFRESH_TOKEN: document.getElementById('gdrive-refresh-token').value.trim(),
+        DRIVE_ROOT_FOLDER_ID: document.getElementById('gdrive-root-folder-id').value.trim()
+    };
+    
+    const statusMsg = document.getElementById('gdrive-status-message');
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch('/api/admin/google-drive-config', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session?.access_token}`
+            },
+            body: JSON.stringify(payload)
+        });
+        
+        if (res.ok) {
+            const data = await res.json();
+            showToast(data.message || "Configurações salvas com sucesso!");
+            if (statusMsg) {
+                statusMsg.style.display = 'block';
+                statusMsg.style.background = '#e8f5e9';
+                statusMsg.style.color = '#2e7d32';
+                statusMsg.innerHTML = '<i class="fas fa-check-circle"></i> Configurações salvas com sucesso!';
+            }
+        } else {
+            const errData = await res.json().catch(() => ({}));
+            showToast(errData.detail || "Erro ao salvar configurações", "error");
+        }
+    } catch (err) {
+        showToast("Falha de conexão: " + err.message, "error");
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = originalText;
+    }
+}
+
+async function testGoogleDriveConfig() {
+    const testBtn = document.getElementById('gdrive-test-btn');
+    const originalText = testBtn.innerHTML;
+    testBtn.disabled = true;
+    testBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testando...';
+    
+    const payload = {
+        GOOGLE_CLIENT_ID: document.getElementById('gdrive-client-id').value.trim(),
+        GOOGLE_CLIENT_SECRET: document.getElementById('gdrive-client-secret').value.trim(),
+        GOOGLE_REFRESH_TOKEN: document.getElementById('gdrive-refresh-token').value.trim(),
+        DRIVE_ROOT_FOLDER_ID: document.getElementById('gdrive-root-folder-id').value.trim()
+    };
+    
+    const statusMsg = document.getElementById('gdrive-status-message');
+    if (statusMsg) {
+        statusMsg.style.display = 'block';
+        statusMsg.style.background = '#e3f2fd';
+        statusMsg.style.color = '#1565c0';
+        statusMsg.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Estabelecendo conexão com o Google Drive...';
+    }
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch('/api/admin/google-drive-config/test', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session?.access_token}`
+            },
+            body: JSON.stringify(payload)
+        });
+        
+        if (res.ok) {
+            const data = await res.json();
+            if (data.status === 'success') {
+                showToast("Conexão bem sucedida!");
+                if (statusMsg) {
+                    statusMsg.style.background = '#e8f5e9';
+                    statusMsg.style.color = '#2e7d32';
+                    statusMsg.innerHTML = '<i class="fas fa-check-circle"></i> ' + data.message;
+                }
+            } else {
+                showToast(data.message, "error");
+                if (statusMsg) {
+                    statusMsg.style.background = '#ffebee';
+                    statusMsg.style.color = '#c62828';
+                    statusMsg.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + data.message;
+                }
+            }
+        } else {
+            showToast("Erro ao processar o teste", "error");
+        }
+    } catch (err) {
+        showToast("Falha de conexão: " + err.message, "error");
+        if (statusMsg) {
+            statusMsg.style.background = '#ffebee';
+            statusMsg.style.color = '#c62828';
+            statusMsg.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Falha de conexão: ' + err.message;
+        }
+    } finally {
+        testBtn.disabled = false;
+        testBtn.innerHTML = originalText;
+    }
+}
+
 async function searchClient(doc) {
     try {
         const res = await fetch(`/api/cnpj/${doc}`);
@@ -802,12 +1004,20 @@ async function loadHistory() {
                 </div>
                 <div id="details-${item.id}" style="display:none; margin-top:12px; padding-top:12px; border-top:1px solid #eee;">
                     <p style="font-size:0.85rem; font-weight:600; color:var(--primary); margin-bottom:8px;">Itens da Entrega:</p>
-                    ${(item.itens || []).map(i => `
+                    ${(item.itens || []).map(i => {
+                        let validadeHtml = '';
+                        if (i.validade && i.validade !== '-') {
+                            const vStr = i.validade.includes('-') ? i.validade.split('-').reverse().slice(0, 2).join('/') : i.validade;
+                            const res = formatValidadeText(i.validade, i.gas);
+                            validadeHtml = `<div style="color:${res.color || '#777'}; font-size:0.75rem; margin-top:3px;"><i class="fas fa-calendar-alt"></i> Validade Base: ${vStr} - <b>${res.txt || ''}</b></div>`;
+                        }
+                        return `
                         <div style="font-size:0.8rem; background:#f9f9f9; padding:8px; border-radius:6px; margin-bottom:6px; border:1px solid #eee;">
                             <b>${i.qtd || 1}x ${i.gas || 'Gás'} (${i.tam || 'Tam n/a'})</b>
+                            ${validadeHtml}
                             ${i.obs ? `<div style="color:#777; font-size:0.75rem; margin-top:3px; font-style:italic;">Obs: ${i.obs}</div>` : ''}
                         </div>
-                    `).join('') || '<p style="font-size:0.8rem; color:#999;">Sem detalhes de itens.</p>'}
+                    `}).join('') || '<p style="font-size:0.8rem; color:#999;">Sem detalhes de itens.</p>'}
                     
                     ${item.fotos && item.fotos.length > 0 ? `
                         <div style="margin-top:12px;">

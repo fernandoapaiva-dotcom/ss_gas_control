@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request, HTTPException, Depends, UploadFile, File, 
 from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker, Session
 from models import Base, Usuario, Cliente, Entrega, CilindroAplicado
-from storage import upload_file_to_drive, upload_temp_file_to_drive, delete_file_from_drive, get_drive_service
+from storage import upload_file_to_drive, upload_temp_file_to_drive, delete_file_from_drive, get_drive_service, get_google_config, CONFIG_PATH
 from auth import get_current_user, role_required
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -626,7 +626,9 @@ async def filtrar_entregas(
             (Cliente.nome_razao.ilike(f"%{search}%")) |
             (Cliente.cnpj.ilike(f"%{search}%")) |
             (Entrega.nome_cliente.ilike(f"%{search}%")) |
-            (Entrega.numero_documento.ilike(f"%{search}%"))
+            (Entrega.numero_documento.ilike(f"%{search}%")) |
+            Entrega.cilindros.any(CilindroAplicado.data_validade.ilike(f"%{search}%")) |
+            Entrega.cilindros.any(CilindroAplicado.observacao.ilike(f"%{search}%"))
         )
 
     entregas = query.order_by(Entrega.data_entrega.desc()).limit(50).all()
@@ -649,11 +651,11 @@ async def filtrar_entregas(
 
         result.append({
             "id": e.id,
-            "data": e.data_entrega.isoformat() if e.data_entrega else None,
+            "data": e.data_entrega.strftime("%Y-%m-%dT%H:%M:%S") if e.data_entrega else None,
             "nf": e.numero_documento or "S/N",
             "cliente": nome,
             "fotos": e.fotos_urls.split(",") if e.fotos_urls else [],
-            "itens": [{"gas": i.tipo_gas, "tam": i.tamanho_gas, "qtd": i.quantidade, "obs": i.observacao} for i in e.cilindros]
+            "itens": [{"gas": i.tipo_gas, "tam": i.tamanho_gas, "qtd": i.quantidade, "validade": i.data_validade, "obs": i.observacao} for i in e.cilindros]
         })
     return result
 
@@ -728,6 +730,66 @@ async def delete_cliente(cnpj: str, db: Session = Depends(get_db), current_user:
     db.commit()
     return {"status": "deleted"}
 
+@app.get("/api/admin/google-drive-config")
+async def get_google_drive_config(current_user: dict = Depends(get_current_user)):
+    if current_user.get("nivel_acesso") != "adm":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    config = get_google_config()
+    return {
+        "GOOGLE_CLIENT_ID": config.get("GOOGLE_CLIENT_ID", ""),
+        "GOOGLE_CLIENT_SECRET": config.get("GOOGLE_CLIENT_SECRET", ""),
+        "GOOGLE_REFRESH_TOKEN": config.get("GOOGLE_REFRESH_TOKEN", ""),
+        "DRIVE_ROOT_FOLDER_ID": config.get("DRIVE_ROOT_FOLDER_ID", "")
+    }
+
+@app.post("/api/admin/google-drive-config")
+async def save_google_drive_config(payload: dict, current_user: dict = Depends(get_current_user)):
+    if current_user.get("nivel_acesso") != "adm":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    config_data = {
+        "GOOGLE_CLIENT_ID": payload.get("GOOGLE_CLIENT_ID", "").strip(),
+        "GOOGLE_CLIENT_SECRET": payload.get("GOOGLE_CLIENT_SECRET", "").strip(),
+        "GOOGLE_REFRESH_TOKEN": payload.get("GOOGLE_REFRESH_TOKEN", "").strip(),
+        "DRIVE_ROOT_FOLDER_ID": payload.get("DRIVE_ROOT_FOLDER_ID", "").strip()
+    }
+    
+    try:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(config_data, f, indent=4)
+        return {"status": "success", "message": "Configurações salvas com sucesso!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao salvar configurações: {str(e)}")
+
+@app.post("/api/admin/google-drive-config/test")
+async def test_google_drive_config(payload: dict, current_user: dict = Depends(get_current_user)):
+    if current_user.get("nivel_acesso") != "adm":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    config_data = {
+        "GOOGLE_CLIENT_ID": payload.get("GOOGLE_CLIENT_ID", "").strip(),
+        "GOOGLE_CLIENT_SECRET": payload.get("GOOGLE_CLIENT_SECRET", "").strip(),
+        "GOOGLE_REFRESH_TOKEN": payload.get("GOOGLE_REFRESH_TOKEN", "").strip(),
+        "DRIVE_ROOT_FOLDER_ID": payload.get("DRIVE_ROOT_FOLDER_ID", "").strip()
+    }
+    
+    try:
+        service = get_drive_service(custom_config=config_data)
+        root_id = config_data.get("DRIVE_ROOT_FOLDER_ID")
+        if not root_id:
+            return {"status": "error", "message": "ID da pasta raiz do Drive não foi fornecido"}
+            
+        results = service.files().list(q=f"'{root_id}' in parents and trashed = false", pageSize=1, fields="files(id, name)").execute()
+        return {"status": "success", "message": "Conexão com Google Drive realizada com sucesso! Pasta raiz encontrada."}
+    except Exception as e:
+        err_msg = str(e)
+        if "invalid_grant" in err_msg or "expired or revoked" in err_msg:
+            err_msg = "Token expirado ou revogado. Por favor, gere um novo refresh token."
+        elif "client_id" in err_msg or "client_secret" in err_msg:
+            err_msg = "Client ID ou Client Secret incorretos."
+        return {"status": "error", "message": f"Erro de conexão com o Drive: {err_msg}"}
+
 @app.post("/api/upload-temp-photo")
 async def upload_temp_photo(
     foto: UploadFile = File(...),
@@ -756,7 +818,10 @@ async def upload_temp_photo(
         res = upload_temp_file_to_drive(file_path, client_name, invoice_number)
         return {"drive_url": res["url"], "file_id": res["file_id"]}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao enviar para o Drive: {str(e)}")
+        err_msg = str(e)
+        if "invalid_grant" in err_msg or "expired or revoked" in err_msg:
+            err_msg = "Token expirado ou revogado no Google Drive. Verifique as configurações."
+        raise HTTPException(status_code=500, detail=f"Erro ao enviar para o Drive: {err_msg}")
     finally:
         if os.path.exists(file_path):
             os.remove(file_path)

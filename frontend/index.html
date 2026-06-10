@@ -204,6 +204,48 @@
                         <p style="color: #666; font-weight: 500; font-size: 0.9rem;">Verificando conexão...</p>
                     </div>
                 </div>
+
+                <div class="card" style="margin-top: 1.5rem;">
+                    <h3 style="margin-bottom: 1rem; display: flex; align-items: center; gap: 8px; color: var(--dark);">
+                        <i class="fab fa-google-drive" style="color: #4285F4; font-size: 1.6rem;"></i> Configurações do Google Drive
+                    </h3>
+                    <p style="font-size: 0.85rem; color: #666; margin-bottom: 1.25rem; line-height: 1.4;">
+                        Insira ou altere as credenciais da API do Google Drive para upload dos comprovantes de entrega.
+                    </p>
+                    
+                    <form id="google-drive-form" onsubmit="saveGoogleDriveConfig(event)">
+                        <div class="form-group" style="margin-bottom: 14px;">
+                            <label style="font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 4px;">Google Client ID</label>
+                            <input type="text" id="gdrive-client-id" class="form-control" placeholder="Ex: XXXXXXXX.apps.googleusercontent.com" required style="width: 100%;">
+                        </div>
+                        
+                        <div class="form-group" style="margin-bottom: 14px;">
+                            <label style="font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 4px;">Google Client Secret</label>
+                            <input type="password" id="gdrive-client-secret" class="form-control" placeholder="GOCSPX-XXXXXX" required style="width: 100%;">
+                        </div>
+                        
+                        <div class="form-group" style="margin-bottom: 14px;">
+                            <label style="font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 4px;">Google Refresh Token</label>
+                            <input type="text" id="gdrive-refresh-token" class="form-control" placeholder="1//0XXXXXX" required style="width: 100%;">
+                        </div>
+                        
+                        <div class="form-group" style="margin-bottom: 1.5rem;">
+                            <label style="font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 4px;">ID da Pasta Raiz (Google Drive Root Folder ID)</label>
+                            <input type="text" id="gdrive-root-folder-id" class="form-control" placeholder="Ex: 1hXpghp54MP..." required style="width: 100%;">
+                        </div>
+                        
+                        <div id="gdrive-status-message" style="margin-bottom: 1.25rem; padding: 10px; border-radius: 8px; display: none; font-size: 0.85rem; font-weight: 500;"></div>
+                        
+                        <div style="display: flex; gap: 10px;">
+                            <button type="button" onclick="testGoogleDriveConfig()" id="gdrive-test-btn" class="btn btn-outline" style="flex: 1; padding: 0.75rem; font-weight: 600;">
+                                <i class="fas fa-plug"></i> Testar Conexão
+                            </button>
+                            <button type="submit" id="gdrive-save-btn" class="btn btn-primary" style="flex: 1; padding: 0.75rem; background: #4285F4; border-color: #4285F4; font-weight: 600;">
+                                <i class="fas fa-save"></i> Salvar Configurações
+                            </button>
+                        </div>
+                    </form>
+                </div>
             </section>
         </main>
     </div>

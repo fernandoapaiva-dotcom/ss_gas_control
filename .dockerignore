@@ -6,3 +6,11 @@ test.db
 service-account.json
 .git
 .gitignore
+node_modules
+mobile/node_modules
+mobile/android
+mobile/ios
+.gradle
+build
+dist
+
