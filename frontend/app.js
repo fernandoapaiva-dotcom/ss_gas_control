@@ -289,6 +289,7 @@ async function checkGoogleDriveStatus() {
     } catch (err) {
         console.error("Falha ao verificar status do Google Drive:", err);
     }
+}
 
 function showView(viewId) {
     const currentActiveView = document.querySelector('.view.active');
