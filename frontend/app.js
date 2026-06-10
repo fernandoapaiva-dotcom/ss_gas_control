@@ -249,6 +249,10 @@ async function handleAuthSuccess(user, session) {
     const adminCard = document.getElementById('admin-card');
     if (adminCard) adminCard.style.display = isAdmin ? 'flex' : 'none';
     
+    if (isAdmin) {
+        checkGoogleDriveStatus();
+    }
+    
     const savedView = localStorage.getItem('active_view');
     if (savedView && savedView !== 'login-view') {
         showView(savedView);
@@ -258,6 +262,33 @@ async function handleAuthSuccess(user, session) {
         showView('home-view');
     }
 }
+
+async function checkGoogleDriveStatus() {
+    const banner = document.getElementById('gdrive-warning-banner');
+    const reasonEl = document.getElementById('gdrive-warning-reason');
+    if (!banner) return;
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch('/api/admin/google-drive-status', {
+            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.status === 'success') {
+                banner.style.display = 'none';
+            } else {
+                if (reasonEl) reasonEl.innerText = data.message || "Erro desconhecido";
+                banner.style.display = 'flex';
+            }
+        } else {
+            // Se falhar a requisição HTTP mas for adm, exibe o erro
+            if (reasonEl) reasonEl.innerText = "Erro ao conectar com a API de status";
+            banner.style.display = 'flex';
+        }
+    } catch (err) {
+        console.error("Falha ao verificar status do Google Drive:", err);
+    }
 
 function showView(viewId) {
     const currentActiveView = document.querySelector('.view.active');

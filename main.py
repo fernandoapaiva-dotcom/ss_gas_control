@@ -793,7 +793,29 @@ async def test_google_drive_config(payload: dict, current_user: dict = Depends(g
             err_msg = "Token expirado ou revogado. Por favor, gere um novo refresh token."
         elif "client_id" in err_msg or "client_secret" in err_msg:
             err_msg = "Client ID ou Client Secret incorretos."
-        return {"status": "error", "message": f"Erro de conexão com o Drive: {err_msg}"}
+@app.get("/api/admin/google-drive-status")
+async def get_google_drive_status(current_user: dict = Depends(get_current_user)):
+    if current_user.get("nivel_acesso") != "adm":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    try:
+        config = get_google_config()
+        service = get_drive_service()
+        root_id = config.get("DRIVE_ROOT_FOLDER_ID")
+        if not root_id:
+            return {"status": "error", "message": "ID da pasta raiz não configurado"}
+        
+        service.files().list(q=f"'{root_id}' in parents and trashed = false", pageSize=1, fields="files(id)").execute()
+        return {"status": "success"}
+    except Exception as e:
+        err_msg = str(e)
+        if "service-account.json" in err_msg or "FileNotFoundError" in err_msg:
+            err_msg = "Arquivo service-account.json não encontrado."
+        elif "invalid_grant" in err_msg or "expired or revoked" in err_msg:
+            err_msg = "Token expirado ou revogado."
+        elif "client_id" in err_msg or "client_secret" in err_msg:
+            err_msg = "Client ID ou Client Secret incorretos."
+        return {"status": "error", "message": err_msg}
 
 @app.post("/api/upload-temp-photo")
 async def upload_temp_photo(

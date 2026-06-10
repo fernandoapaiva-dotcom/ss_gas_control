@@ -70,6 +70,14 @@
                     <p>O que você deseja fazer hoje?</p>
                 </div>
                 
+                <div id="gdrive-warning-banner" style="display: none; background: #ffebee; border-left: 5px solid #c62828; color: #c62828; padding: 12px 16px; margin: 1rem 0; border-radius: 8px; font-size: 0.9rem; font-weight: 500; display: flex; align-items: center; justify-content: space-between; gap: 10px; box-shadow: 0 2px 6px rgba(198,40,40,0.15);">
+                    <div style="display: flex; align-items: center; gap: 8px; text-align: left;">
+                        <i class="fas fa-exclamation-triangle" style="font-size: 1.1rem; flex-shrink: 0;"></i>
+                        <span><b>Alerta do Sistema:</b> A conexão com o Google Drive está inativa (<span id="gdrive-warning-reason">Token expirado ou revogado</span>). Os motoristas não conseguirão enviar fotos!</span>
+                    </div>
+                    <button onclick="showView('admin-view')" class="btn btn-outline" style="border-color: #c62828; color: #c62828; padding: 6px 12px; font-size: 0.8rem; width: auto; font-weight: 600; background: white; white-space: nowrap; margin-left: auto;">Corrigir Agora</button>
+                </div>
+                
                 <div class="hero-grid">
                     <div class="hero-card" onclick="showView('driver-view')">
                         <div class="hero-icon" style="background: var(--primary-light); color: var(--primary);">
@@ -259,6 +267,13 @@
                             <button type="submit" id="gdrive-save-btn" class="btn btn-primary" style="flex: 1; padding: 0.75rem; background: #4285F4; border-color: #4285F4; font-weight: 600;">
                                 <i class="fas fa-save"></i> Salvar Configurações
                             </button>
+                        </div>
+
+                        <div id="gdrive-oauth-instructions" style="margin-top: 1.25rem; padding: 12px; border-radius: 8px; background: #f8f9fa; border: 1px solid #e9ecef; font-size: 0.82rem; line-height: 1.4; color: #555; text-align: left;">
+                            <span style="font-weight: 600; color: var(--dark); display: block; margin-bottom: 6px;"><i class="fas fa-info-circle"></i> Links Rápidos para Renovar o OAuth2:</span>
+                            1. Acesse as <a href="https://console.cloud.google.com/apis/credentials?project=ss-gas-control" target="_blank" style="color: #4285F4; font-weight: 600; text-decoration: none;"><i class="fas fa-external-link-alt"></i> Credenciais no Google Cloud</a>.<br>
+                            2. Verifique o status na <a href="https://console.cloud.google.com/apis/consent?project=ss-gas-control" target="_blank" style="color: #4285F4; font-weight: 600; text-decoration: none;"><i class="fas fa-external-link-alt"></i> Tela de consentimento OAuth</a> (deve estar <b>Em Produção</b>).<br>
+                            3. Execute o script `get_token.py` no seu computador para gerar o novo token e cole-o no campo de Refresh Token acima.
                         </div>
                     </form>
                 </div>
