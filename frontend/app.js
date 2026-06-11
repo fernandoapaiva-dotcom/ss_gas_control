@@ -358,6 +358,33 @@ function showView(viewId) {
     }
 }
 
+function getMarcasOptions(selectedMarca) {
+    let marcas = JSON.parse(localStorage.getItem('gas_marcas') || '["White Martins", "IBG", "Air Liquide", "Messer"]');
+    if (selectedMarca && !marcas.includes(selectedMarca)) {
+        marcas.push(selectedMarca);
+        localStorage.setItem('gas_marcas', JSON.stringify(marcas));
+    }
+    return marcas.map(m => `<option value="${m}" ${m === selectedMarca ? 'selected' : ''}>${m}</option>`).join('');
+}
+
+function handleMarcaChange(selectEl) {
+    if (selectEl.value === 'NOVA_MARCA') {
+        const nova = prompt('Digite o nome da nova marca:');
+        if (nova && nova.trim() !== '') {
+            let marcas = JSON.parse(localStorage.getItem('gas_marcas') || '["White Martins", "IBG", "Air Liquide", "Messer"]');
+            if (!marcas.includes(nova.trim())) {
+                marcas.push(nova.trim());
+                localStorage.setItem('gas_marcas', JSON.stringify(marcas));
+            }
+            const currentVal = nova.trim();
+            selectEl.innerHTML = '<option value="">Selecione a marca...</option>' + getMarcasOptions(currentVal) + '<option value="NOVA_MARCA">+ Adicionar Nova Marca</option>';
+            selectEl.value = currentVal;
+        } else {
+            selectEl.value = '';
+        }
+    }
+}
+
 let itemCounter = 0;
 function addItem(data = null) {
     const container = document.getElementById('items-container');
@@ -383,6 +410,14 @@ function addItem(data = null) {
             <option value="10m3">10m\u00b3</option><option value="1kg">1 kg</option><option value="9kg">9 kg</option>
             <option value="13kg">13 kg</option><option value="25kg">25 kg</option><option value="45kg">45 kg</option>
         </select>
+        <div style="margin-top:0.5rem;">
+            <label style="font-size:0.8rem; font-weight:bold; color:#666;">Marca:</label>
+            <select class="form-control" name="marca" onchange="handleMarcaChange(this); saveDraft()">
+                <option value="">Selecione a marca...</option>
+                ${getMarcasOptions(data ? data.marca : '')}
+                <option value="NOVA_MARCA">+ Adicionar Nova Marca</option>
+            </select>
+        </div>
         <div style="display:flex; gap:10px; margin-top:0.5rem;">
             <div style="flex:1;">
                 <input type="month" class="form-control cil-validade" style="width:100%;" value="${data?data.validade:''}" oninput="calcularVencimentoElement(this)">
@@ -402,7 +437,11 @@ function addItem(data = null) {
         </div>
     `;
     container.appendChild(div);
-    if (data) { div.querySelector('[name="tipo_gas"]').value = data.tipo_gas; div.querySelector('[name="tamanho_gas"]').value = data.tamanho_gas; }
+    if (data) { 
+        div.querySelector('[name="tipo_gas"]').value = data.tipo_gas; 
+        div.querySelector('[name="tamanho_gas"]').value = data.tamanho_gas;
+        if (div.querySelector('[name="marca"]') && data.marca) div.querySelector('[name="marca"]').value = data.marca;
+    }
     calcularVencimentoElement(div.querySelector('.cil-validade'));
 }
 
@@ -664,7 +703,8 @@ async function submitDelivery(whatsappPhone = null, btn, originalText) {
             tamanho_gas: card.querySelector('[name="tamanho_gas"]').value,
             qtd: card.querySelector('[name="qtd"]').value,
             validade: card.querySelector('.cil-validade') ? card.querySelector('.cil-validade').value : '',
-            obs: card.querySelector('.cil-obs').value
+            obs: card.querySelector('.cil-obs').value,
+            marca: card.querySelector('[name="marca"]') ? card.querySelector('[name="marca"]').value : ''
         }))
     };
     
@@ -1138,7 +1178,7 @@ async function loadHistory() {
                         }
                         return `
                         <div style="font-size:0.8rem; background:#f9f9f9; padding:8px; border-radius:6px; margin-bottom:6px; border:1px solid #eee;">
-                            <b>${i.qtd || 1}x ${i.gas || 'Gás'} (${i.tam || 'Tam n/a'})</b>
+                            <b>${i.qtd || 1}x ${i.gas || 'Gás'} (${i.tam || 'Tam n/a'})</b> ${i.marca ? `<span style="color:#2e7d32; font-weight:600;">[${i.marca}]</span>` : ''}
                             ${validadeHtml}
                             ${i.obs ? `<div style="color:#777; font-size:0.75rem; margin-top:3px; font-style:italic;">Obs: ${i.obs}</div>` : ''}
                         </div>
@@ -2184,5 +2224,25 @@ function checkInitialNetwork() {
     }
 }
 
+async function syncMarcas() {
+    try {
+        const res = await fetch('/api/marcas');
+        if (res.ok) {
+            const dbMarcas = await res.json();
+            let localMarcas = JSON.parse(localStorage.getItem('gas_marcas') || '["White Martins", "IBG", "Air Liquide", "Messer"]');
+            
+            // remove empty strings if any
+            localMarcas = localMarcas.filter(m => m.trim() !== '');
+            let dbClean = dbMarcas.filter(m => m && m.trim() !== '');
+            
+            let all = [...new Set([...localMarcas, ...dbClean])];
+            localStorage.setItem('gas_marcas', JSON.stringify(all));
+        }
+    } catch(e) {
+        console.log("Offline: couldn't sync marcas");
+    }
+}
+
 initSupabase();
 checkInitialNetwork();
+syncMarcas();
