@@ -745,6 +745,7 @@ async def get_google_drive_auth_url(request: Request, current_user: dict = Depen
     if request.headers.get("x-forwarded-proto") == "https":
         base_url = base_url.replace("http://", "https://")
     redirect_uri = base_url + '/api/admin/google-drive/callback'
+    print(f"[GOOGLE DRIVE OAUTH] redirect_uri: {redirect_uri}")
     
     scopes = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive"
     
@@ -765,6 +766,7 @@ async def google_drive_callback(request: Request, code: str, state: Optional[str
     config = get_google_config()
     client_id = config.get("GOOGLE_CLIENT_ID")
     client_secret = config.get("GOOGLE_CLIENT_SECRET")
+    print(f"[GOOGLE CALLBACK] client_id: {client_id}, client_secret (masked): {client_secret[:10]}...{client_secret[-5:] if client_secret else ''}")
     
     if not client_id or not client_secret:
         raise HTTPException(status_code=400, detail="Configurações do Google (Client ID ou Secret) incompletas no servidor.")
