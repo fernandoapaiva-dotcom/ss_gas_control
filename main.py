@@ -46,6 +46,7 @@ async def send_whatsapp_receipt_background(
     print(f"[WHATSAPP] Iniciando envio autônomo para {raw_phone}...")
 
     # 1. Constrói a mensagem em texto formatado
+    import datetime
     items_text = ""
     for c in cilindros:
         obs_val = c.get('obs') or c.get('observacao')
@@ -53,15 +54,72 @@ async def send_whatsapp_receipt_background(
             obs_text = f" (Obs: {obs_val.strip()})"
         else:
             obs_text = ""
-        items_text += f"• *{c.get('qtd', 1)}x {c.get('tipo_gas')} {c.get('tamanho_gas')}*{obs_text}\n"
+            
+        marca = c.get('marca')
+        marca_text = f" - Marca: {marca}" if marca else ""
+        
+        validade_str = c.get('validade') or c.get('data_validade')
+        validade_info = ""
+        if validade_str and validade_str != "-":
+            try:
+                hoje = datetime.date.today()
+                
+                # Regras de anos de validade por tipo de gas
+                import unicodedata
+                tipo_gas = str(c.get('tipo_gas', ''))
+                tipo_gas_norm = unicodedata.normalize('NFD', tipo_gas).encode('ascii', 'ignore').decode('utf8').upper()
+                
+                anos_adicionais = 0
+                if tipo_gas_norm in ['ACETILENO', 'ARGONIO', 'NITROGENIO', 'OXIGENIO']:
+                    anos_adicionais = 10
+                elif tipo_gas_norm in ['CO2', 'GLP', 'MISTURA']:
+                    anos_adicionais = 5
+                
+                # Tratar YYYY-MM (nativo do input month)
+                if len(validade_str) == 7:
+                    ano, mes = validade_str.split("-")
+                    mes = int(mes)
+                    ano = int(ano) + anos_adicionais
+                    import calendar
+                    ultimo_dia = calendar.monthrange(ano, mes)[1]
+                    val_date = datetime.date(ano, mes, ultimo_dia)
+                    dias = (val_date - hoje).days
+                    val_br = f"{mes:02d}/{ano}"
+                    
+                    if dias > 0:
+                        validade_info = f"\n  Vence em: {val_br} (faltam {dias} dias)"
+                    elif dias == 0:
+                        validade_info = f"\n  Vence em: {val_br} (vence neste mês!)"
+                    else:
+                        validade_info = f"\n  Vence em: {val_br} (vencido há {abs(dias)} dias)"
+                # Tratar YYYY-MM-DD
+                elif len(validade_str) == 10:
+                    ano, mes, dia = validade_str.split("-")
+                    ano = int(ano) + anos_adicionais
+                    val_date = datetime.date(ano, int(mes), int(dia))
+                    dias = (val_date - hoje).days
+                    val_br = val_date.strftime("%d/%m/%Y")
+                    
+                    if dias > 0:
+                        validade_info = f"\n  Vence em: {val_br} (faltam {dias} dias)"
+                    elif dias == 0:
+                        validade_info = f"\n  Vence em: {val_br} (vence hoje!)"
+                    else:
+                        validade_info = f"\n  Vence em: {val_br} (vencido há {abs(dias)} dias)"
+                else:
+                    validade_info = f"\n  Vence em: {validade_str}"
+            except Exception:
+                validade_info = f"\n  Vence em: {validade_str}"
+
+        items_text += f"* {c.get('qtd', 1)}x {c.get('tipo_gas')} {c.get('tamanho_gas')}{marca_text}{obs_text}{validade_info}\n"
 
     # Constrói a mensagem principal em texto
     message = (
         f"*Servsolda - Confirmação de Entrega* 🚚\n\n"
         f"Confirmamos a entrega de gás realizada hoje:\n\n"
-        f"🏢 *Cliente:* {nome_cliente or 'Cliente Novo'}\n"
-        f"📄 *Nota Fiscal / Documento:* {numero_documento or 'S/N'}\n\n"
-        f"📦 *Itens Entregues:*\n{items_text}\n"
+        f"🏢 Cliente: {nome_cliente or 'Cliente Novo'}\n"
+        f"📄 Nota Fiscal / Documento: {numero_documento or 'S/N'}\n\n"
+        f"📦 Itens Entregues:\n{items_text}\n"
         f"Muito obrigado pela parceria!"
     )
 
@@ -502,6 +560,13 @@ async def delete_usuario(
     db.commit()
     return {"status": "success"}
 
+@app.get("/api/marcas")
+def get_marcas(db: Session = Depends(get_db)):
+    marcas = db.query(CilindroAplicado.marca).filter(CilindroAplicado.marca != None, CilindroAplicado.marca != "").distinct().all()
+    lista = [m[0] for m in marcas]
+    defaults = ["White Martins", "IBG", "Air Liquide", "Messer"]
+    return list(set(lista + defaults))
+
 
 
 
@@ -585,7 +650,8 @@ async def create_entrega(
             tamanho_gas=cil.get('tamanho_gas'),
             quantidade=cil.get('qtd', 1),
             data_validade=cil.get('validade') or "-",
-            observacao=cil.get('obs')
+            observacao=cil.get('obs'),
+            marca=cil.get('marca')
         )
         db.add(cilindro)
 
@@ -656,7 +722,7 @@ async def filtrar_entregas(
             "nf": e.numero_documento or "S/N",
             "cliente": nome,
             "fotos": e.fotos_urls.split(",") if e.fotos_urls else [],
-            "itens": [{"gas": i.tipo_gas, "tam": i.tamanho_gas, "qtd": i.quantidade, "validade": i.data_validade, "obs": i.observacao} for i in e.cilindros]
+            "itens": [{"gas": i.tipo_gas, "tam": i.tamanho_gas, "qtd": i.quantidade, "validade": i.data_validade, "obs": i.observacao, "marca": i.marca} for i in e.cilindros]
         })
     return result
 
@@ -698,7 +764,9 @@ async def reenviar_whatsapp(
             "tipo_gas": cil.tipo_gas,
             "tamanho_gas": cil.tamanho_gas,
             "qtd": cil.quantidade,
-            "obs": cil.observacao
+            "obs": cil.observacao,
+            "marca": cil.marca,
+            "validade": cil.data_validade
         }
         for cil in entrega.cilindros
     ]
