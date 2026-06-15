@@ -12,6 +12,7 @@ services:
       - ./assets:/app/assets
       - ./test.db:/app/test.db  # BANCO DE DADOS AGORA É PERMANENTE!
       - ./service-account.json:/app/service-account.json
+      - ./google_config.json:/app/google_config.json
     ports:
       - "8000:8000"
     networks:

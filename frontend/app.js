@@ -905,6 +905,18 @@ async function loadGoogleDriveConfig() {
             document.getElementById('gdrive-client-secret').value = data.GOOGLE_CLIENT_SECRET || '';
             document.getElementById('gdrive-refresh-token').value = data.GOOGLE_REFRESH_TOKEN || '';
             document.getElementById('gdrive-root-folder-id').value = data.DRIVE_ROOT_FOLDER_ID || '';
+            document.getElementById('gdrive-redirect-uri').value = data.GOOGLE_REDIRECT_URI || '';
+            
+            const saEmailDisplay = document.getElementById('gdrive-service-account-email-display');
+            if (saEmailDisplay) {
+                if (data.SERVICE_ACCOUNT_EMAIL) {
+                    saEmailDisplay.innerText = data.SERVICE_ACCOUNT_EMAIL;
+                    saEmailDisplay.style.color = '#0d47a1';
+                } else {
+                    saEmailDisplay.innerText = 'Arquivo service-account.json NÃO encontrado no servidor!';
+                    saEmailDisplay.style.color = '#c62828';
+                }
+            }
             toggleGoogleDriveAuthFields();
         } else {
             console.error("Erro ao carregar configurações do Google Drive");
@@ -927,7 +939,8 @@ async function saveGoogleDriveConfig(e) {
         GOOGLE_CLIENT_ID: document.getElementById('gdrive-client-id').value.trim(),
         GOOGLE_CLIENT_SECRET: document.getElementById('gdrive-client-secret').value.trim(),
         GOOGLE_REFRESH_TOKEN: document.getElementById('gdrive-refresh-token').value.trim(),
-        DRIVE_ROOT_FOLDER_ID: document.getElementById('gdrive-root-folder-id').value.trim()
+        DRIVE_ROOT_FOLDER_ID: document.getElementById('gdrive-root-folder-id').value.trim(),
+        GOOGLE_REDIRECT_URI: document.getElementById('gdrive-redirect-uri').value.trim()
     };
     
     const statusMsg = document.getElementById('gdrive-status-message');
@@ -952,6 +965,8 @@ async function saveGoogleDriveConfig(e) {
                 statusMsg.style.color = '#2e7d32';
                 statusMsg.innerHTML = '<i class="fas fa-check-circle"></i> Configurações salvas com sucesso!';
             }
+            // Reload config to update service account status / email dynamically
+            setTimeout(loadGoogleDriveConfig, 500);
         } else {
             const errData = await res.json().catch(() => ({}));
             showToast(errData.detail || "Erro ao salvar configurações", "error");
@@ -975,7 +990,8 @@ async function testGoogleDriveConfig() {
         GOOGLE_CLIENT_ID: document.getElementById('gdrive-client-id').value.trim(),
         GOOGLE_CLIENT_SECRET: document.getElementById('gdrive-client-secret').value.trim(),
         GOOGLE_REFRESH_TOKEN: document.getElementById('gdrive-refresh-token').value.trim(),
-        DRIVE_ROOT_FOLDER_ID: document.getElementById('gdrive-root-folder-id').value.trim()
+        DRIVE_ROOT_FOLDER_ID: document.getElementById('gdrive-root-folder-id').value.trim(),
+        GOOGLE_REDIRECT_URI: document.getElementById('gdrive-redirect-uri').value.trim()
     };
     
     const statusMsg = document.getElementById('gdrive-status-message');

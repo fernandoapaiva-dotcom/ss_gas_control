@@ -741,10 +741,12 @@ async def get_google_drive_auth_url(request: Request, current_user: dict = Depen
     if not client_id:
         raise HTTPException(status_code=400, detail="Google Client ID não configurado nas configurações.")
         
-    base_url = str(request.base_url).rstrip('/')
-    if request.headers.get("x-forwarded-proto") == "https":
-        base_url = base_url.replace("http://", "https://")
-    redirect_uri = base_url + '/api/admin/google-drive/callback'
+    redirect_uri = config.get("GOOGLE_REDIRECT_URI")
+    if not redirect_uri:
+        base_url = str(request.base_url).rstrip('/')
+        if request.headers.get("x-forwarded-proto") == "https":
+            base_url = base_url.replace("http://", "https://")
+        redirect_uri = base_url + '/api/admin/google-drive/callback'
     print(f"[GOOGLE DRIVE OAUTH] redirect_uri: {redirect_uri}")
     
     scopes = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive"
@@ -755,7 +757,7 @@ async def get_google_drive_auth_url(request: Request, current_user: dict = Depen
         "response_type": "code",
         "scope": scopes,
         "access_type": "offline",
-        "prompt": "consent"
+        "prompt": "select_account consent"
     }
     
     url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
@@ -771,10 +773,12 @@ async def google_drive_callback(request: Request, code: str, state: Optional[str
     if not client_id or not client_secret:
         raise HTTPException(status_code=400, detail="Configurações do Google (Client ID ou Secret) incompletas no servidor.")
         
-    base_url = str(request.base_url).rstrip('/')
-    if request.headers.get("x-forwarded-proto") == "https":
-        base_url = base_url.replace("http://", "https://")
-    redirect_uri = base_url + '/api/admin/google-drive/callback'
+    redirect_uri = config.get("GOOGLE_REDIRECT_URI")
+    if not redirect_uri:
+        base_url = str(request.base_url).rstrip('/')
+        if request.headers.get("x-forwarded-proto") == "https":
+            base_url = base_url.replace("http://", "https://")
+        redirect_uri = base_url + '/api/admin/google-drive/callback'
     
     # Exchange code for token
     token_url = "https://oauth2.googleapis.com/token"
@@ -814,12 +818,26 @@ async def get_google_drive_config(current_user: dict = Depends(get_current_user)
         raise HTTPException(status_code=403, detail="Acesso negado")
     
     config = get_google_config()
+    
+    # Read service account email if the file exists
+    service_account_email = None
+    service_account_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'service-account.json')
+    if os.path.exists(service_account_path):
+        try:
+            with open(service_account_path, 'r', encoding='utf-8') as f:
+                sa_data = json.load(f)
+                service_account_email = sa_data.get("client_email")
+        except Exception as e:
+            print(f"Erro ao ler service-account.json: {e}")
+            
     return {
         "GOOGLE_CLIENT_ID": config.get("GOOGLE_CLIENT_ID", ""),
         "GOOGLE_CLIENT_SECRET": config.get("GOOGLE_CLIENT_SECRET", ""),
         "GOOGLE_REFRESH_TOKEN": config.get("GOOGLE_REFRESH_TOKEN", ""),
         "DRIVE_ROOT_FOLDER_ID": config.get("DRIVE_ROOT_FOLDER_ID", ""),
-        "USE_SERVICE_ACCOUNT": config.get("USE_SERVICE_ACCOUNT", False)
+        "USE_SERVICE_ACCOUNT": config.get("USE_SERVICE_ACCOUNT", False),
+        "GOOGLE_REDIRECT_URI": config.get("GOOGLE_REDIRECT_URI", ""),
+        "SERVICE_ACCOUNT_EMAIL": service_account_email
     }
 
 @app.post("/api/admin/google-drive-config")
@@ -832,7 +850,8 @@ async def save_google_drive_config(payload: dict, current_user: dict = Depends(g
         "GOOGLE_CLIENT_SECRET": payload.get("GOOGLE_CLIENT_SECRET", "").strip(),
         "GOOGLE_REFRESH_TOKEN": payload.get("GOOGLE_REFRESH_TOKEN", "").strip(),
         "DRIVE_ROOT_FOLDER_ID": payload.get("DRIVE_ROOT_FOLDER_ID", "").strip(),
-        "USE_SERVICE_ACCOUNT": bool(payload.get("USE_SERVICE_ACCOUNT", False))
+        "USE_SERVICE_ACCOUNT": bool(payload.get("USE_SERVICE_ACCOUNT", False)),
+        "GOOGLE_REDIRECT_URI": payload.get("GOOGLE_REDIRECT_URI", "").strip()
     }
     
     try:
@@ -852,7 +871,8 @@ async def test_google_drive_config(payload: dict, current_user: dict = Depends(g
         "GOOGLE_CLIENT_SECRET": payload.get("GOOGLE_CLIENT_SECRET", "").strip(),
         "GOOGLE_REFRESH_TOKEN": payload.get("GOOGLE_REFRESH_TOKEN", "").strip(),
         "DRIVE_ROOT_FOLDER_ID": payload.get("DRIVE_ROOT_FOLDER_ID", "").strip(),
-        "USE_SERVICE_ACCOUNT": bool(payload.get("USE_SERVICE_ACCOUNT", False))
+        "USE_SERVICE_ACCOUNT": bool(payload.get("USE_SERVICE_ACCOUNT", False)),
+        "GOOGLE_REDIRECT_URI": payload.get("GOOGLE_REDIRECT_URI", "").strip()
     }
     
     try:

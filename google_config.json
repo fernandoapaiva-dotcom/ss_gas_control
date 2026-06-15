@@ -1,0 +1,8 @@
+{
+    "GOOGLE_CLIENT_ID": "",
+    "GOOGLE_CLIENT_SECRET": "",
+    "GOOGLE_REFRESH_TOKEN": "",
+    "DRIVE_ROOT_FOLDER_ID": "",
+    "USE_SERVICE_ACCOUNT": false,
+    "GOOGLE_REDIRECT_URI": ""
+}
