@@ -810,7 +810,9 @@ async def get_google_drive_auth_url(request: Request, current_user: dict = Depen
         raise HTTPException(status_code=400, detail="Google Client ID não configurado nas configurações.")
         
     redirect_uri = config.get("GOOGLE_REDIRECT_URI")
-    if not redirect_uri:
+    if redirect_uri:
+        redirect_uri = redirect_uri.strip().rstrip('/')
+    else:
         base_url = str(request.base_url).rstrip('/')
         if request.headers.get("x-forwarded-proto") == "https":
             base_url = base_url.replace("http://", "https://")
@@ -842,7 +844,9 @@ async def google_drive_callback(request: Request, code: str, state: Optional[str
         raise HTTPException(status_code=400, detail="Configurações do Google (Client ID ou Secret) incompletas no servidor.")
         
     redirect_uri = config.get("GOOGLE_REDIRECT_URI")
-    if not redirect_uri:
+    if redirect_uri:
+        redirect_uri = redirect_uri.strip().rstrip('/')
+    else:
         base_url = str(request.base_url).rstrip('/')
         if request.headers.get("x-forwarded-proto") == "https":
             base_url = base_url.replace("http://", "https://")

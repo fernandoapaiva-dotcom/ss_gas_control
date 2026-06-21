@@ -980,7 +980,7 @@ async function saveGoogleDriveConfig(e) {
         GOOGLE_CLIENT_SECRET: document.getElementById('gdrive-client-secret').value.trim(),
         GOOGLE_REFRESH_TOKEN: document.getElementById('gdrive-refresh-token').value.trim(),
         DRIVE_ROOT_FOLDER_ID: document.getElementById('gdrive-root-folder-id').value.trim(),
-        GOOGLE_REDIRECT_URI: document.getElementById('gdrive-redirect-uri').value.trim()
+        GOOGLE_REDIRECT_URI: document.getElementById('gdrive-redirect-uri').value.trim().replace(/\/$/, '')
     };
     
     const statusMsg = document.getElementById('gdrive-status-message');
@@ -1031,7 +1031,7 @@ async function testGoogleDriveConfig() {
         GOOGLE_CLIENT_SECRET: document.getElementById('gdrive-client-secret').value.trim(),
         GOOGLE_REFRESH_TOKEN: document.getElementById('gdrive-refresh-token').value.trim(),
         DRIVE_ROOT_FOLDER_ID: document.getElementById('gdrive-root-folder-id').value.trim(),
-        GOOGLE_REDIRECT_URI: document.getElementById('gdrive-redirect-uri').value.trim()
+        GOOGLE_REDIRECT_URI: document.getElementById('gdrive-redirect-uri').value.trim().replace(/\/$/, '')
     };
     
     const statusMsg = document.getElementById('gdrive-status-message');
