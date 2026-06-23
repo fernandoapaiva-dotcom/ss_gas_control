@@ -581,7 +581,8 @@ def list_gases(db: Session = Depends(get_db)):
     return db.query(Gas).order_by(Gas.nome).all()
 
 @app.post("/api/gases")
-def create_gas(payload: dict, db: Session = Depends(get_db), current_user = Depends(role_required("adm"))):
+async def create_gas(request: Request, db: Session = Depends(get_db), current_user = Depends(role_required("adm"))):
+    payload = await request.json()
     nome = payload.get("nome")
     validade_anos = payload.get("validade_anos")
     if not nome or not validade_anos:
@@ -601,11 +602,12 @@ def create_gas(payload: dict, db: Session = Depends(get_db), current_user = Depe
     return gas
 
 @app.put("/api/gases/{gas_id}")
-def update_gas(gas_id: int, payload: dict, db: Session = Depends(get_db), current_user = Depends(role_required("adm"))):
+async def update_gas(gas_id: int, request: Request, db: Session = Depends(get_db), current_user = Depends(role_required("adm"))):
     gas = db.query(Gas).filter(Gas.id == gas_id).first()
     if not gas:
         raise HTTPException(status_code=404, detail="Gás não encontrado")
     
+    payload = await request.json()
     nome = payload.get("nome")
     validade_anos = payload.get("validade_anos")
     if not nome or not validade_anos:
