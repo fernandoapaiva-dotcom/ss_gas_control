@@ -596,7 +596,6 @@ def list_gases(db: Session = Depends(get_db)):
     return db.query(Gas).order_by(Gas.nome).all()
 
 @app.post("/api/gases")
-@app.post("/api/gases")
 async def create_gas(request: Request, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     if current_user.get("nivel_acesso") != "adm":
         raise HTTPException(status_code=403, detail="Acesso negado")
