@@ -49,3 +49,9 @@ class CilindroAplicado(Base):
     observacao = Column(String, nullable=True)
     marca = Column(String, nullable=True)
     entrega = relationship("Entrega", back_populates="cilindros")
+
+class Gas(Base):
+    __tablename__ = "gases"
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String, unique=True, nullable=False)
+    validade_anos = Column(Integer, nullable=False, default=10)

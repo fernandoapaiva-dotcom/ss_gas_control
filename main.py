@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request, HTTPException, Depends, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker, Session
-from models import Base, Usuario, Cliente, Entrega, CilindroAplicado
+from models import Base, Usuario, Cliente, Entrega, CilindroAplicado, Gas
 from storage import upload_file_to_drive, upload_temp_file_to_drive, delete_file_from_drive, get_drive_service, get_google_config, CONFIG_PATH
 from auth import get_current_user, role_required
 from fastapi.middleware.cors import CORSMiddleware
@@ -64,22 +64,11 @@ async def send_whatsapp_receipt_background(
             try:
                 hoje = datetime.date.today()
                 
-                # Regras de anos de validade por tipo de gas
-                import unicodedata
-                tipo_gas = str(c.get('tipo_gas', ''))
-                tipo_gas_norm = unicodedata.normalize('NFD', tipo_gas).encode('ascii', 'ignore').decode('utf8').upper()
-                
-                anos_adicionais = 0
-                if tipo_gas_norm in ['ACETILENO', 'ARGONIO', 'NITROGENIO', 'OXIGENIO']:
-                    anos_adicionais = 10
-                elif tipo_gas_norm in ['CO2', 'GLP', 'MISTURA']:
-                    anos_adicionais = 5
-                
                 # Tratar YYYY-MM (nativo do input month)
                 if len(validade_str) == 7:
                     ano, mes = validade_str.split("-")
                     mes = int(mes)
-                    ano = int(ano) + anos_adicionais
+                    ano = int(ano)
                     import calendar
                     ultimo_dia = calendar.monthrange(ano, mes)[1]
                     val_date = datetime.date(ano, mes, ultimo_dia)
@@ -95,8 +84,7 @@ async def send_whatsapp_receipt_background(
                 # Tratar YYYY-MM-DD
                 elif len(validade_str) == 10:
                     ano, mes, dia = validade_str.split("-")
-                    ano = int(ano) + anos_adicionais
-                    val_date = datetime.date(ano, int(mes), int(dia))
+                    val_date = datetime.date(int(ano), int(mes), int(dia))
                     dias = (val_date - hoje).days
                     val_br = val_date.strftime("%d/%m/%Y")
                     
@@ -232,6 +220,26 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Create tables
 Base.metadata.create_all(bind=engine)
+
+# Seed default gases
+db_seed = SessionLocal()
+try:
+    if db_seed.query(Gas).count() == 0:
+        default_gases = [
+            Gas(nome="Oxigênio", validade_anos=10),
+            Gas(nome="Acetileno", validade_anos=5),
+            Gas(nome="Argônio", validade_anos=10),
+            Gas(nome="Nitrogênio", validade_anos=10),
+            Gas(nome="Mistura", validade_anos=5),
+            Gas(nome="CO2", validade_anos=5),
+            Gas(nome="GLP", validade_anos=15)
+        ]
+        db_seed.add_all(default_gases)
+        db_seed.commit()
+except Exception as e:
+    print(f"[SEED] Erro ao popular gases padrao: {e}")
+finally:
+    db_seed.close()
 
 app = FastAPI()
 
@@ -566,6 +574,45 @@ def get_marcas(db: Session = Depends(get_db)):
     lista = [m[0] for m in marcas]
     defaults = ["White Martins", "IBG", "Air Liquide", "Messer"]
     return list(set(lista + defaults))
+
+# --- CRUD GASES ---
+@app.get("/api/gases")
+def list_gases(db: Session = Depends(get_db)):
+    return db.query(Gas).order_by(Gas.nome).all()
+
+@app.post("/api/gases")
+def create_gas(nome: str = Form(...), validade_anos: int = Form(...), db: Session = Depends(get_db), current_user = Depends(role_required("adm"))):
+    existing = db.query(Gas).filter(Gas.nome.ilike(nome)).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Gás com este nome já cadastrado")
+    gas = Gas(nome=nome, validade_anos=validade_anos)
+    db.add(gas)
+    db.commit()
+    db.refresh(gas)
+    return gas
+
+@app.put("/api/gases/{gas_id}")
+def update_gas(gas_id: int, nome: str = Form(...), validade_anos: int = Form(...), db: Session = Depends(get_db), current_user = Depends(role_required("adm"))):
+    gas = db.query(Gas).filter(Gas.id == gas_id).first()
+    if not gas:
+        raise HTTPException(status_code=404, detail="Gás não encontrado")
+    existing = db.query(Gas).filter(Gas.nome.ilike(nome), Gas.id != gas_id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Gás com este nome já cadastrado")
+    gas.nome = nome
+    gas.validade_anos = validade_anos
+    db.commit()
+    db.refresh(gas)
+    return gas
+
+@app.delete("/api/gases/{gas_id}")
+def delete_gas(gas_id: int, db: Session = Depends(get_db), current_user = Depends(role_required("adm"))):
+    gas = db.query(Gas).filter(Gas.id == gas_id).first()
+    if not gas:
+        raise HTTPException(status_code=404, detail="Gás não encontrado")
+    db.delete(gas)
+    db.commit()
+    return {"status": "success"}
 
 
 

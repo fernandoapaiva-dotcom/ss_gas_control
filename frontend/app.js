@@ -353,6 +353,7 @@ function showView(viewId) {
     if (viewId === 'clients-view') loadClients();
     if (viewId === 'admin-view') {
         loadUsers();
+        loadGases();
         checkWhatsAppStatus();
         loadGoogleDriveConfig();
     }
@@ -385,6 +386,53 @@ function handleMarcaChange(selectEl) {
     }
 }
 
+let gasesList = [];
+
+async function loadGasesList() {
+    try {
+        const res = await fetch('/api/gases');
+        if (res.ok) {
+            gasesList = await res.json();
+            localStorage.setItem('gases_list', JSON.stringify(gasesList));
+        } else {
+            gasesList = JSON.parse(localStorage.getItem('gases_list') || '[]');
+        }
+    } catch (err) {
+        console.error("Erro ao carregar gases:", err);
+        gasesList = JSON.parse(localStorage.getItem('gases_list') || '[]');
+    }
+}
+
+function getGasesOptions(selectedVal = '') {
+    const list = gasesList.length > 0 ? gasesList : [
+        { nome: "Oxigênio", validade_anos: 10 },
+        { nome: "Acetileno", validade_anos: 5 },
+        { nome: "Argônio", validade_anos: 10 },
+        { nome: "Nitrogênio", validade_anos: 10 },
+        { nome: "Mistura", validade_anos: 5 },
+        { nome: "CO2", validade_anos: 5 },
+        { nome: "GLP", validade_anos: 15 }
+    ];
+    return list.map(g => `<option value="${g.nome}" ${g.nome === selectedVal ? 'selected' : ''}>${g.nome}</option>`).join('');
+}
+
+function handleGasChange(selectEl) {
+    const card = selectEl.closest('.item-card');
+    if (!card) return;
+    const gasNome = selectEl.value;
+    const gas = gasesList.find(g => g.nome === gasNome) || { validade_anos: 10 };
+    const validadeAnos = gas ? gas.validade_anos : 10;
+    
+    const dateInput = card.querySelector('.cil-validade');
+    if (dateInput) {
+        const now = new Date();
+        const futureYear = now.getFullYear() + validadeAnos;
+        const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+        dateInput.value = `${futureYear}-${currentMonth}`;
+        calcularVencimentoElement(dateInput);
+    }
+}
+
 let itemCounter = 0;
 function addItem(data = null) {
     const container = document.getElementById('items-container');
@@ -398,16 +446,14 @@ function addItem(data = null) {
             <button type="button" onclick="this.closest('.item-card').remove(); saveDraft();" style="color:red; border:none; background:none; font-size:1.2rem;">&times;</button>
         </div>
         <div class="filter-grid" style="margin-top:0.5rem;">
-            <select class="form-control" name="tipo_gas" onchange="calcularVencimentoElement(this)">
-                <option value="Oxig\u00eanio">Oxig\u00eanio</option><option value="Acetileno">Acetileno</option>
-                <option value="Arg\u00f4nio">Arg\u00f4nio</option><option value="Mistura">Mistura</option>
-                <option value="CO2">CO2</option><option value="Nitroge\u0302nio">Nitrog\u00eanio</option><option value="GLP">GLP</option>
+            <select class="form-control" name="tipo_gas" onchange="calcularVencimentoElement(this); handleGasChange(this); saveDraft()">
+                ${getGasesOptions(data ? data.tipo_gas : '')}
             </select>
             <input type="number" class="form-control" name="qtd" value="${data?data.qtd:1}" onchange="saveDraft()">
         </div>
         <select class="form-control" name="tamanho_gas" style="margin-top:0.5rem;" onchange="saveDraft()">
-            <option value="1m3">1m\u00b3</option><option value="3m3">3m\u00b3</option><option value="7m3">7m\u00b3</option>
-            <option value="10m3">10m\u00b3</option><option value="1kg">1 kg</option><option value="9kg">9 kg</option>
+            <option value="1m3">1m³</option><option value="3m3">3m³</option><option value="7m3">7m³</option>
+            <option value="10m3">10m³</option><option value="1kg">1 kg</option><option value="9kg">9 kg</option>
             <option value="13kg">13 kg</option><option value="25kg">25 kg</option><option value="45kg">45 kg</option>
         </select>
         <div style="margin-top:0.5rem;">
@@ -423,7 +469,7 @@ function addItem(data = null) {
                 <input type="month" class="form-control cil-validade" style="width:100%;" value="${data?data.validade:''}" oninput="calcularVencimentoElement(this)">
                 <div class="cil-vencimento-msg" style="font-size:0.75rem; color:#777; margin-top:3px; line-height:1.2;"></div>
             </div>
-            <input type="text" class="form-control cil-obs" placeholder="Observa\u00e7\u00e3o..." style="flex:1;" value="${data?data.obs:''}" oninput="saveDraft()">
+            <input type="text" class="form-control cil-obs" placeholder="Observação..." style="flex:1;" value="${data?data.obs:''}" oninput="saveDraft()">
         </div>
         <div id="photos-${id}" style="display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin-top:5px;"></div>
         
@@ -441,38 +487,34 @@ function addItem(data = null) {
         div.querySelector('[name="tipo_gas"]').value = data.tipo_gas; 
         div.querySelector('[name="tamanho_gas"]').value = data.tamanho_gas;
         if (div.querySelector('[name="marca"]') && data.marca) div.querySelector('[name="marca"]').value = data.marca;
+    } else {
+        const selectGas = div.querySelector('[name="tipo_gas"]');
+        if (selectGas) handleGasChange(selectGas);
     }
     calcularVencimentoElement(div.querySelector('.cil-validade'));
 }
 
-function formatValidadeText(dataTestStr, tipoGas) {
-    if (!dataTestStr || !dataTestStr.includes('-')) return '';
-    let validadeAnos = 10;
-    if (tipoGas) {
-        const gas = tipoGas.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "");
-        if (gas.includes('acetileno') || gas.includes('co2')) validadeAnos = 5;
-        else if (gas.includes('glp')) validadeAnos = 15;
-    }
+function formatValidadeText(dataValidadeStr, tipoGas) {
+    if (!dataValidadeStr || !dataValidadeStr.includes('-')) return { txt: '', color: '#777' };
     
-    const parts = dataTestStr.split('-');
-    const testYear = parseInt(parts[0], 10);
-    const testMonth = parseInt(parts[1], 10);
-    const expYear = testYear + validadeAnos;
+    const parts = dataValidadeStr.split('-');
+    const expYear = parseInt(parts[0], 10);
+    const expMonth = parseInt(parts[1], 10);
     const now = new Date();
     
-    let diffMonths = (expYear - now.getFullYear()) * 12 + (testMonth - 1 - now.getMonth());
+    let diffMonths = (expYear - now.getFullYear()) * 12 + (expMonth - 1 - now.getMonth());
     let txt = '';
     let color = '#777';
     if (diffMonths < 0) {
         diffMonths = Math.abs(diffMonths);
         let anos = Math.floor(diffMonths / 12);
         let meses = diffMonths % 12;
-        txt = `Vencido há ${anos > 0 ? anos + ' ano(s) e ' : ''}${meses} mes(es) (Venceu em ${testMonth.toString().padStart(2, '0')}/${expYear})`;
+        txt = `Vencido há ${anos > 0 ? anos + ' ano(s) e ' : ''}${meses} mes(es) (Venceu em ${expMonth.toString().padStart(2, '0')}/${expYear})`;
         color = 'red';
     } else {
         let anos = Math.floor(diffMonths / 12);
         let meses = diffMonths % 12;
-        txt = `Vence em ${anos > 0 ? anos + ' ano(s) e ' : ''}${meses} mes(es) (Vence em ${testMonth.toString().padStart(2, '0')}/${expYear})`;
+        txt = `Vence em ${anos > 0 ? anos + ' ano(s) e ' : ''}${meses} mes(es) (Vence em ${expMonth.toString().padStart(2, '0')}/${expYear})`;
     }
     return { txt, color };
 }
@@ -1972,6 +2014,161 @@ async function deleteUser(userId) {
     }
 }
 
+// --- GESTÃO DE GASES ---
+let allGases = [];
+
+async function loadGases() {
+    const container = document.getElementById('gas-list-container');
+    if (!container) return;
+    
+    try {
+        const res = await fetch('/api/gases');
+        if (res.ok) {
+            allGases = await res.json();
+            renderGasesList(allGases);
+        } else {
+            container.innerHTML = `<p style="text-align: center; color: var(--danger); padding: 2rem;">Erro ao carregar gases.</p>`;
+        }
+    } catch (err) {
+        container.innerHTML = `<p style="text-align: center; color: var(--danger); padding: 2rem;">Erro ao conectar ao servidor.</p>`;
+    }
+}
+
+function renderGasesList(gases) {
+    const container = document.getElementById('gas-list-container');
+    if (!container) return;
+    
+    container.style.display = 'grid';
+    container.style.gridTemplateColumns = 'repeat(auto-fill, minmax(280px, 1fr))';
+    container.style.gap = '16px';
+    
+    container.innerHTML = gases.map(g => {
+        return `
+        <div class="list-item" style="padding: 16px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); border-top: 4px solid var(--primary); display: flex; flex-direction: column; justify-content: space-between; min-height: 120px; margin-bottom: 0;">
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">
+                    <h4 style="margin: 0; font-size: 0.95rem; color: var(--dark); font-weight: 700; line-height: 1.3; word-break: break-word;">${g.nome}</h4>
+                    <div style="display: flex; gap: 4px;">
+                        <button onclick="openGasModal(${g.id})" class="btn btn-outline" style="border: none; color: var(--primary); padding: 4px 6px; width: auto; font-size: 0.85rem; background: transparent; cursor: pointer;" title="Editar Gás">
+                            <i class="fas fa-pencil-alt"></i>
+                        </button>
+                        <button onclick="deleteGas(${g.id})" class="btn btn-outline" style="border: none; color: var(--danger); padding: 4px 6px; width: auto; font-size: 0.85rem; background: transparent; cursor: pointer;" title="Excluir Gás">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                </div>
+                <p style="font-size: 0.8rem; color: #666; margin: 0 0 12px 0; display: flex; align-items: center; gap: 6px;">
+                    <i class="fas fa-calendar-alt" style="color: #bbb;"></i> Validade padrão: ${g.validade_anos} ano(s)
+                </p>
+            </div>
+        </div>
+        `;
+    }).join('') || `<p style="text-align: center; color: #999; padding: 2rem; grid-column: 1 / -1;">Nenhum gás cadastrado.</p>`;
+}
+
+function openGasModal(gasId = null) {
+    const modal = document.getElementById('gas-modal');
+    if (!modal) return;
+    
+    const title = document.getElementById('gas-modal-title');
+    const idField = document.getElementById('gas-id-field');
+    const nomeField = document.getElementById('gas-nome-field');
+    const validadeField = document.getElementById('gas-validade-field');
+    
+    if (gasId) {
+        title.innerHTML = `<i class="fas fa-flask" style="color: var(--primary);"></i> Editar Gás`;
+        const gas = allGases.find(g => g.id === gasId);
+        if (gas) {
+            idField.value = gas.id;
+            nomeField.value = gas.nome;
+            validadeField.value = gas.validade_anos;
+        }
+    } else {
+        title.innerHTML = `<i class="fas fa-flask" style="color: var(--primary);"></i> Novo Gás`;
+        idField.value = "";
+        nomeField.value = "";
+        validadeField.value = "";
+    }
+    
+    modal.style.display = 'flex';
+}
+
+function closeGasModal() {
+    const modal = document.getElementById('gas-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function saveGasForm(event) {
+    event.preventDefault();
+    
+    const id = document.getElementById('gas-id-field').value;
+    const nome = document.getElementById('gas-nome-field').value;
+    const validade_anos = document.getElementById('gas-validade-field').value;
+    
+    const formData = new FormData();
+    formData.append('nome', nome);
+    formData.append('validade_anos', validade_anos);
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        
+        let res;
+        if (id) {
+            res = await fetch(`/api/gases/${id}`, {
+                method: 'PUT',
+                headers: { 
+                    'Authorization': `Bearer ${session?.access_token}`
+                },
+                body: formData
+            });
+        } else {
+            res = await fetch('/api/gases', {
+                method: 'POST',
+                headers: { 
+                    'Authorization': `Bearer ${session?.access_token}`
+                },
+                body: formData
+            });
+        }
+        
+        if (res.ok) {
+            showToast("Gás salvo com sucesso!");
+            closeGasModal();
+            loadGases();
+            loadGasesList(); // reload global cached list too
+        } else {
+            const errData = await res.json();
+            showToast("Erro: " + (errData.detail || "Não foi possível salvar o gás"), "error");
+        }
+    } catch (err) {
+        showToast("Erro de conexão com o servidor.", "error");
+    }
+}
+
+async function deleteGas(gasId) {
+    if (!confirm("Tem certeza que deseja excluir este gás?")) {
+        return;
+    }
+    
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch(`/api/gases/${gasId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        });
+        
+        if (res.ok) {
+            showToast("Gás excluído com sucesso!");
+            loadGases();
+            loadGasesList(); // reload global cached list too
+        } else {
+            showToast("Erro ao excluir gás.", "error");
+        }
+    } catch (err) {
+        showToast("Erro de conexão.", "error");
+    }
+}
+
 async function resendWhatsApp(id, clientName) {
     const rawPhone = prompt(`Digite o número do WhatsApp (com DDD) para reenviar o comprovante de ${clientName}:\nEx: (24) 98888-7777`);
     if (!rawPhone) return;
@@ -2262,3 +2459,4 @@ async function syncMarcas() {
 initSupabase();
 checkInitialNetwork();
 syncMarcas();
+loadGasesList();
