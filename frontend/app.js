@@ -419,16 +419,13 @@ function getGasesOptions(selectedVal = '') {
 function handleGasChange(selectEl) {
     const card = selectEl.closest('.item-card');
     if (!card) return;
-    const gasNome = selectEl.value;
-    const gas = gasesList.find(g => g.nome === gasNome) || { validade_anos: 10 };
-    const validadeAnos = gas ? gas.validade_anos : 10;
-    
     const dateInput = card.querySelector('.cil-validade');
     if (dateInput) {
-        const now = new Date();
-        const futureYear = now.getFullYear() + validadeAnos;
-        const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
-        dateInput.value = `${futureYear}-${currentMonth}`;
+        if (!dateInput.value) {
+            const now = new Date();
+            const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+            dateInput.value = `${now.getFullYear()}-${currentMonth}`;
+        }
         calcularVencimentoElement(dateInput);
     }
 }
@@ -497,24 +494,28 @@ function addItem(data = null) {
 function formatValidadeText(dataValidadeStr, tipoGas) {
     if (!dataValidadeStr || !dataValidadeStr.includes('-')) return { txt: '', color: '#777' };
     
+    const gas = gasesList.find(g => g.nome === tipoGas);
+    const validadeAnos = gas ? gas.validade_anos : 10;
+    
     const parts = dataValidadeStr.split('-');
-    const expYear = parseInt(parts[0], 10);
-    const expMonth = parseInt(parts[1], 10);
+    const testYear = parseInt(parts[0], 10);
+    const testMonth = parseInt(parts[1], 10);
+    const expYear = testYear + validadeAnos;
     const now = new Date();
     
-    let diffMonths = (expYear - now.getFullYear()) * 12 + (expMonth - 1 - now.getMonth());
+    let diffMonths = (expYear - now.getFullYear()) * 12 + (testMonth - 1 - now.getMonth());
     let txt = '';
     let color = '#777';
     if (diffMonths < 0) {
         diffMonths = Math.abs(diffMonths);
         let anos = Math.floor(diffMonths / 12);
         let meses = diffMonths % 12;
-        txt = `Vencido há ${anos > 0 ? anos + ' ano(s) e ' : ''}${meses} mes(es) (Venceu em ${expMonth.toString().padStart(2, '0')}/${expYear})`;
+        txt = `Vencido há ${anos > 0 ? anos + ' ano(s) e ' : ''}${meses} mes(es) (Venceu em ${testMonth.toString().padStart(2, '0')}/${expYear})`;
         color = 'red';
     } else {
         let anos = Math.floor(diffMonths / 12);
         let meses = diffMonths % 12;
-        txt = `Vence em ${anos > 0 ? anos + ' ano(s) e ' : ''}${meses} mes(es) (Vence em ${expMonth.toString().padStart(2, '0')}/${expYear})`;
+        txt = `Vence em ${anos > 0 ? anos + ' ano(s) e ' : ''}${meses} mes(es) (Vence em ${testMonth.toString().padStart(2, '0')}/${expYear})`;
     }
     return { txt, color };
 }
@@ -1214,6 +1215,7 @@ async function loadHistory() {
                         <p style="margin:4px 0 0; color:#666; font-size:0.8rem;">
                             <i class="far fa-calendar-alt"></i> ${item.data ? new Date(item.data).toLocaleDateString('pt-BR') : 'Data n/a'} 
                             - <i class="fas fa-file-invoice"></i> NF: ${item.nf || 'S/N'}
+                            - <i class="fas fa-user"></i> Operador: ${item.operador || 'n/a'}
                         </p>
                     </div>
                     <div style="display:flex; align-items:center; gap:12px;">

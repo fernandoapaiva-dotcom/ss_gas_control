@@ -28,7 +28,8 @@ async def send_whatsapp_receipt_background(
     nome_cliente: str,
     numero_documento: str,
     cilindros: list,
-    fotos: list
+    fotos: list,
+    nome_operador: str = "Motorista"
 ):
     if not EVOLUTION_API_URL or not EVOLUTION_API_KEY:
         print("[WHATSAPP] Credenciais da Evolution API não encontradas no .env")
@@ -48,65 +49,79 @@ async def send_whatsapp_receipt_background(
     # 1. Constrói a mensagem em texto formatado
     import datetime
     items_text = ""
-    for c in cilindros:
-        obs_val = c.get('obs') or c.get('observacao')
-        if obs_val and obs_val.strip() not in ("", "-", "S/N", "obs", "Observação..."):
-            obs_text = f" (Obs: {obs_val.strip()})"
-        else:
-            obs_text = ""
-            
-        marca = c.get('marca')
-        marca_text = f" - Marca: {marca}" if marca else ""
-        
-        validade_str = c.get('validade') or c.get('data_validade')
-        validade_info = ""
-        if validade_str and validade_str != "-":
-            try:
-                hoje = datetime.date.today()
+    
+    # Open db connection to fetch gas validity years
+    db = SessionLocal()
+    try:
+        for c in cilindros:
+            obs_val = c.get('obs') or c.get('observacao')
+            if obs_val and obs_val.strip() not in ("", "-", "S/N", "obs", "Observação..."):
+                obs_text = f" (Obs: {obs_val.strip()})"
+            else:
+                obs_text = ""
                 
-                # Tratar YYYY-MM (nativo do input month)
-                if len(validade_str) == 7:
-                    ano, mes = validade_str.split("-")
-                    mes = int(mes)
-                    ano = int(ano)
-                    import calendar
-                    ultimo_dia = calendar.monthrange(ano, mes)[1]
-                    val_date = datetime.date(ano, mes, ultimo_dia)
-                    dias = (val_date - hoje).days
-                    val_br = f"{mes:02d}/{ano}"
+            marca = c.get('marca')
+            marca_text = f" - Marca: {marca}" if marca else ""
+            
+            validade_str = c.get('validade') or c.get('data_validade')
+            validade_info = ""
+            if validade_str and validade_str != "-":
+                try:
+                    hoje = datetime.date.today()
                     
-                    if dias > 0:
-                        validade_info = f"\n  Vence em: {val_br} (faltam {dias} dias)"
-                    elif dias == 0:
-                        validade_info = f"\n  Vence em: {val_br} (vence neste mês!)"
-                    else:
-                        validade_info = f"\n  Vence em: {val_br} (vencido há {abs(dias)} dias)"
-                # Tratar YYYY-MM-DD
-                elif len(validade_str) == 10:
-                    ano, mes, dia = validade_str.split("-")
-                    val_date = datetime.date(int(ano), int(mes), int(dia))
-                    dias = (val_date - hoje).days
-                    val_br = val_date.strftime("%d/%m/%Y")
+                    # Query db for gas validity
+                    tipo_gas = c.get('tipo_gas') or c.get('gas') or ''
+                    db_item = db.query(Gas).filter(Gas.nome.ilike(tipo_gas)).first()
+                    anos_adicionais = db_item.validade_anos if db_item else 10
                     
-                    if dias > 0:
-                        validade_info = f"\n  Vence em: {val_br} (faltam {dias} dias)"
-                    elif dias == 0:
-                        validade_info = f"\n  Vence em: {val_br} (vence hoje!)"
+                    # Tratar YYYY-MM (nativo do input month)
+                    if len(validade_str) == 7:
+                        ano, mes = validade_str.split("-")
+                        mes = int(mes)
+                        ano = int(ano) + anos_adicionais
+                        import calendar
+                        ultimo_dia = calendar.monthrange(ano, mes)[1]
+                        val_date = datetime.date(ano, mes, ultimo_dia)
+                        dias = (val_date - hoje).days
+                        val_br = f"{mes:02d}/{ano}"
+                        
+                        if dias > 0:
+                            validade_info = f"\n  Vence em: {val_br} (faltam {dias} dias)"
+                        elif dias == 0:
+                            validade_info = f"\n  Vence em: {val_br} (vence neste mês!)"
+                        else:
+                            validade_info = f"\n  Vence em: {val_br} (vencido há {abs(dias)} dias)"
+                    # Tratar YYYY-MM-DD
+                    elif len(validade_str) == 10:
+                        ano, mes, dia = validade_str.split("-")
+                        ano = int(ano) + anos_adicionais
+                        val_date = datetime.date(ano, int(mes), int(dia))
+                        dias = (val_date - hoje).days
+                        val_br = val_date.strftime("%d/%m/%Y")
+                        
+                        if dias > 0:
+                            validade_info = f"\n  Vence em: {val_br} (faltam {dias} dias)"
+                        elif dias == 0:
+                            validade_info = f"\n  Vence em: {val_br} (vence hoje!)"
+                        else:
+                            validade_info = f"\n  Vence em: {val_br} (vencido há {abs(dias)} dias)"
                     else:
-                        validade_info = f"\n  Vence em: {val_br} (vencido há {abs(dias)} dias)"
-                else:
+                        validade_info = f"\n  Vence em: {validade_str}"
+                except Exception as val_err:
+                    print(f"[WHATSAPP] Erro ao calcular validade {validade_str}: {val_err}")
                     validade_info = f"\n  Vence em: {validade_str}"
-            except Exception:
-                validade_info = f"\n  Vence em: {validade_str}"
-
-        items_text += f"* {c.get('qtd', 1)}x {c.get('tipo_gas')} {c.get('tamanho_gas')}{marca_text}{obs_text}{validade_info}\n"
+    
+            items_text += f"* {c.get('qtd', c.get('quantidade', 1))}x {c.get('tipo_gas') or c.get('gas')} {c.get('tamanho_gas') or c.get('tam')}{marca_text}{obs_text}{validade_info}\n"
+    finally:
+        db.close()
 
     # Constrói a mensagem principal em texto
     message = (
         f"*Servsolda - Confirmação de Entrega* 🚚\n\n"
         f"Confirmamos a entrega de gás realizada hoje:\n\n"
         f"🏢 Cliente: {nome_cliente or 'Cliente Novo'}\n"
-        f"📄 Nota Fiscal / Documento: {numero_documento or 'S/N'}\n\n"
+        f"📄 Nota Fiscal / Documento: {numero_documento or 'S/N'}\n"
+        f"👤 Operador: {nome_operador}\n\n"
         f"📦 Itens Entregues:\n{items_text}\n"
         f"Muito obrigado pela parceria!"
     )
@@ -581,7 +596,11 @@ def list_gases(db: Session = Depends(get_db)):
     return db.query(Gas).order_by(Gas.nome).all()
 
 @app.post("/api/gases")
-async def create_gas(request: Request, db: Session = Depends(get_db), current_user = Depends(role_required("adm"))):
+@app.post("/api/gases")
+async def create_gas(request: Request, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    if current_user.get("nivel_acesso") != "adm":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+        
     payload = await request.json()
     nome = payload.get("nome")
     validade_anos = payload.get("validade_anos")
@@ -602,7 +621,10 @@ async def create_gas(request: Request, db: Session = Depends(get_db), current_us
     return gas
 
 @app.put("/api/gases/{gas_id}")
-async def update_gas(gas_id: int, request: Request, db: Session = Depends(get_db), current_user = Depends(role_required("adm"))):
+async def update_gas(gas_id: int, request: Request, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    if current_user.get("nivel_acesso") != "adm":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+        
     gas = db.query(Gas).filter(Gas.id == gas_id).first()
     if not gas:
         raise HTTPException(status_code=404, detail="Gás não encontrado")
@@ -627,7 +649,10 @@ async def update_gas(gas_id: int, request: Request, db: Session = Depends(get_db
     return gas
 
 @app.delete("/api/gases/{gas_id}")
-def delete_gas(gas_id: int, db: Session = Depends(get_db), current_user = Depends(role_required("adm"))):
+def delete_gas(gas_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    if current_user.get("nivel_acesso") != "adm":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+        
     gas = db.query(Gas).filter(Gas.id == gas_id).first()
     if not gas:
         raise HTTPException(status_code=404, detail="Gás não encontrado")
@@ -733,7 +758,8 @@ async def create_entrega(
             nome_cliente,
             numero_documento,
             cilindros_data,
-            fotos_pre_carregadas
+            fotos_pre_carregadas,
+            current_user.get('nome', 'Motorista')
         )
 
     return {"status": "success", "id": entrega.id, "photos": fotos_pre_carregadas}
@@ -784,11 +810,16 @@ async def filtrar_entregas(
 
         print(f"ID: {e.id} | Cliente: {nome} | Data: {e.data_entrega} | NF: {e.numero_documento}")
 
+        # Query operator name
+        motorista_db = db.query(Usuario).filter(Usuario.id == e.fk_motorista).first()
+        nome_operador = motorista_db.nome if motorista_db else "Operador Desconhecido"
+
         result.append({
             "id": e.id,
             "data": e.data_entrega.strftime("%Y-%m-%dT%H:%M:%S") if e.data_entrega else None,
             "nf": e.numero_documento or "S/N",
             "cliente": nome,
+            "operador": nome_operador,
             "fotos": e.fotos_urls.split(",") if e.fotos_urls else [],
             "itens": [{"gas": i.tipo_gas, "tam": i.tamanho_gas, "qtd": i.quantidade, "validade": i.data_validade, "obs": i.observacao, "marca": i.marca} for i in e.cilindros]
         })
@@ -841,13 +872,18 @@ async def reenviar_whatsapp(
 
     fotos_pre_carregadas = entrega.fotos_urls.split(",") if entrega.fotos_urls else []
 
+    # Query original operator name
+    motorista_db = db.query(Usuario).filter(Usuario.id == entrega.fk_motorista).first()
+    nome_operador = motorista_db.nome if motorista_db else "Motorista"
+
     background_tasks.add_task(
         send_whatsapp_receipt_background,
         whatsapp_phone,
         nome,
         entrega.numero_documento,
         cilindros_data,
-        fotos_pre_carregadas
+        fotos_pre_carregadas,
+        nome_operador
     )
 
     return {"status": "success", "message": "Reenvio agendado"}
