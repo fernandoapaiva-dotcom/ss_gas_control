@@ -581,7 +581,16 @@ def list_gases(db: Session = Depends(get_db)):
     return db.query(Gas).order_by(Gas.nome).all()
 
 @app.post("/api/gases")
-def create_gas(nome: str = Form(...), validade_anos: int = Form(...), db: Session = Depends(get_db), current_user = Depends(role_required("adm"))):
+def create_gas(payload: dict, db: Session = Depends(get_db), current_user = Depends(role_required("adm"))):
+    nome = payload.get("nome")
+    validade_anos = payload.get("validade_anos")
+    if not nome or not validade_anos:
+        raise HTTPException(status_code=400, detail="Nome e validade_anos são obrigatórios")
+    try:
+        validade_anos = int(validade_anos)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Validade deve ser um número inteiro")
+    
     existing = db.query(Gas).filter(Gas.nome.ilike(nome)).first()
     if existing:
         raise HTTPException(status_code=400, detail="Gás com este nome já cadastrado")
@@ -592,10 +601,20 @@ def create_gas(nome: str = Form(...), validade_anos: int = Form(...), db: Sessio
     return gas
 
 @app.put("/api/gases/{gas_id}")
-def update_gas(gas_id: int, nome: str = Form(...), validade_anos: int = Form(...), db: Session = Depends(get_db), current_user = Depends(role_required("adm"))):
+def update_gas(gas_id: int, payload: dict, db: Session = Depends(get_db), current_user = Depends(role_required("adm"))):
     gas = db.query(Gas).filter(Gas.id == gas_id).first()
     if not gas:
         raise HTTPException(status_code=404, detail="Gás não encontrado")
+    
+    nome = payload.get("nome")
+    validade_anos = payload.get("validade_anos")
+    if not nome or not validade_anos:
+        raise HTTPException(status_code=400, detail="Nome e validade_anos são obrigatórios")
+    try:
+        validade_anos = int(validade_anos)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Validade deve ser um número inteiro")
+        
     existing = db.query(Gas).filter(Gas.nome.ilike(nome), Gas.id != gas_id).first()
     if existing:
         raise HTTPException(status_code=400, detail="Gás com este nome já cadastrado")

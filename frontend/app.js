@@ -2103,11 +2103,9 @@ async function saveGasForm(event) {
     
     const id = document.getElementById('gas-id-field').value;
     const nome = document.getElementById('gas-nome-field').value;
-    const validade_anos = document.getElementById('gas-validade-field').value;
+    const validade_anos = parseInt(document.getElementById('gas-validade-field').value, 10);
     
-    const formData = new FormData();
-    formData.append('nome', nome);
-    formData.append('validade_anos', validade_anos);
+    const payload = { nome, validade_anos };
     
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
@@ -2117,17 +2115,19 @@ async function saveGasForm(event) {
             res = await fetch(`/api/gases/${id}`, {
                 method: 'PUT',
                 headers: { 
+                    'Content-Type': 'application/json',
                     'Authorization': `Bearer ${session?.access_token}`
                 },
-                body: formData
+                body: JSON.stringify(payload)
             });
         } else {
             res = await fetch('/api/gases', {
                 method: 'POST',
                 headers: { 
+                    'Content-Type': 'application/json',
                     'Authorization': `Bearer ${session?.access_token}`
                 },
-                body: formData
+                body: JSON.stringify(payload)
             });
         }
         
@@ -2138,7 +2138,17 @@ async function saveGasForm(event) {
             loadGasesList(); // reload global cached list too
         } else {
             const errData = await res.json();
-            showToast("Erro: " + (errData.detail || "Não foi possível salvar o gás"), "error");
+            let errMsg = "Não foi possível salvar o gás";
+            if (errData && errData.detail) {
+                if (typeof errData.detail === 'string') {
+                    errMsg = errData.detail;
+                } else if (Array.isArray(errData.detail)) {
+                    errMsg = errData.detail.map(e => e.msg || JSON.stringify(e)).join(', ');
+                } else {
+                    errMsg = JSON.stringify(errData.detail);
+                }
+            }
+            showToast("Erro: " + errMsg, "error");
         }
     } catch (err) {
         showToast("Erro de conexão com o servidor.", "error");
