@@ -853,33 +853,36 @@ def generate_search_variants(term: str) -> list:
     if not term or not term.strip():
         return []
     term = term.strip()
-    variants = [term]
     
     import re
-    # 1. Padrao MM/YY (ex: 06/25 ou 6/25 ou 06-25)
+    # 1. Padrao MM/YY (ex: 06/25 ou 6/25 ou 06-25 ou 6-25)
     match_mmyy = re.match(r"^(\d{1,2})[/.-](\d{2})$", term)
     if match_mmyy:
         m = match_mmyy.group(1).zfill(2)
+        m_int = str(int(m))
         yy = match_mmyy.group(2)
         yyyy = f"20{yy}"
-        variants.extend([f"{yyyy}-{m}", f"{m}/{yyyy}", f"{m}/{yy}", yyyy, f"{int(m)}/{yyyy}", f"{int(m)}/{yy}"])
+        return [f"{yyyy}-{m}", f"{m}/{yyyy}", f"{m}/{yy}", f"{m_int}/{yyyy}", f"{m_int}/{yy}", f"{yyyy}-{m_int}"]
         
-    # 2. Padrao MM/YYYY (ex: 06/2025 ou 6/2025)
+    # 2. Padrao MM/YYYY (ex: 06/2025 ou 6/2025 ou 06-2025)
     match_mmyyyy = re.match(r"^(\d{1,2})[/.-](\d{4})$", term)
     if match_mmyyyy:
         m = match_mmyyyy.group(1).zfill(2)
+        m_int = str(int(m))
         yyyy = match_mmyyyy.group(2)
         yy = yyyy[2:]
-        variants.extend([f"{yyyy}-{m}", f"{m}/{yyyy}", f"{m}/{yy}", yyyy, f"{int(m)}/{yyyy}"])
+        return [f"{yyyy}-{m}", f"{m}/{yyyy}", f"{m}/{yy}", f"{m_int}/{yyyy}", f"{m_int}/{yy}", f"{yyyy}-{m_int}"]
 
-    # 3. Padrao YYYY-MM (ex: 2025-06)
+    # 3. Padrao YYYY-MM (ex: 2025-06 ou 2025/06)
     match_yyyymm = re.match(r"^(\d{4})[/.-](\d{1,2})$", term)
     if match_yyyymm:
         yyyy = match_yyyymm.group(1)
         m = match_yyyymm.group(2).zfill(2)
+        m_int = str(int(m))
         yy = yyyy[2:]
-        variants.extend([f"{yyyy}-{m}", f"{m}/{yyyy}", f"{m}/{yy}", yyyy])
+        return [f"{yyyy}-{m}", f"{m}/{yyyy}", f"{m}/{yy}", f"{m_int}/{yyyy}", f"{m_int}/{yy}", f"{yyyy}-{m_int}"]
         
+    variants = [term]
     res = []
     for v in variants:
         if v not in res:
@@ -905,21 +908,33 @@ async def filtrar_entregas(
             query = query.filter(Entrega.data_entrega <= datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59))
         except: pass
     if search and search.strip():
-        search_terms = generate_search_variants(search)
-        conditions = []
-        for t in search_terms:
-            conditions.extend([
-                Cliente.nome_razao.ilike(f"%{t}%"),
-                Cliente.cnpj.ilike(f"%{t}%"),
-                Entrega.nome_cliente.ilike(f"%{t}%"),
-                Entrega.numero_documento.ilike(f"%{t}%"),
-                Entrega.cilindros.any(CilindroAplicado.tipo_gas.ilike(f"%{t}%")),
-                Entrega.cilindros.any(CilindroAplicado.tamanho_gas.ilike(f"%{t}%")),
-                Entrega.cilindros.any(CilindroAplicado.marca.ilike(f"%{t}%")),
-                Entrega.cilindros.any(CilindroAplicado.data_validade.ilike(f"%{t}%")),
-                Entrega.cilindros.any(CilindroAplicado.observacao.ilike(f"%{t}%")),
-            ])
-        query = query.filter(or_(*conditions))
+        term_clean = search.strip()
+        search_terms = generate_search_variants(term_clean)
+        
+        import re
+        is_exact_date_search = bool(
+            re.match(r"^(\d{1,2})[/.-](\d{2,4})$", term_clean) or 
+            re.match(r"^(\d{4})[/.-](\d{1,2})$", term_clean)
+        )
+
+        if is_exact_date_search:
+            date_conditions = [CilindroAplicado.data_validade.ilike(f"%{t}%") for t in search_terms]
+            query = query.filter(Entrega.cilindros.any(or_(*date_conditions)))
+        else:
+            conditions = []
+            for t in search_terms:
+                conditions.extend([
+                    Cliente.nome_razao.ilike(f"%{t}%"),
+                    Cliente.cnpj.ilike(f"%{t}%"),
+                    Entrega.nome_cliente.ilike(f"%{t}%"),
+                    Entrega.numero_documento.ilike(f"%{t}%"),
+                    Entrega.cilindros.any(CilindroAplicado.tipo_gas.ilike(f"%{t}%")),
+                    Entrega.cilindros.any(CilindroAplicado.tamanho_gas.ilike(f"%{t}%")),
+                    Entrega.cilindros.any(CilindroAplicado.marca.ilike(f"%{t}%")),
+                    Entrega.cilindros.any(CilindroAplicado.data_validade.ilike(f"%{t}%")),
+                    Entrega.cilindros.any(CilindroAplicado.observacao.ilike(f"%{t}%")),
+                ])
+            query = query.filter(or_(*conditions))
 
     entregas = query.order_by(Entrega.data_entrega.desc()).limit(50).all()
 
