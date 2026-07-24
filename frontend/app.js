@@ -367,7 +367,7 @@ async function handleAuthSuccess(user, session) {
             session = data.session;
         }
         const res = await fetch('/api/usuarios/me', {
-            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            headers: { 'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}` }
         });
         if (res.ok) {
             const dbUser = await res.json();
@@ -442,7 +442,7 @@ async function checkGoogleDriveStatus() {
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
         const res = await fetch('/api/admin/google-drive-status', {
-            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            headers: { 'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}` }
         });
         if (res.ok) {
             const data = await res.json();
@@ -465,9 +465,9 @@ async function checkGoogleDriveStatus() {
 function showView(viewId) {
     const currentActiveView = document.querySelector('.view.active');
     if (currentActiveView && currentActiveView.id === 'driver-view' && viewId !== 'driver-view') {
-        const hasData = document.getElementById('client-doc')?.value || 
-                        document.getElementById('client-name')?.value || 
-                        document.getElementById('doc-number')?.value || 
+        const hasData = (document.getElementById('client-doc') ? document.getElementById('client-doc').value : '') || 
+                        (document.getElementById('client-name') ? document.getElementById('client-name').value : '') || 
+                        (document.getElementById('doc-number') ? document.getElementById('doc-number').value : '') || 
                         document.querySelectorAll('.item-card').length > 0;
                         
         if (hasData) {
@@ -819,7 +819,7 @@ function addPhoto(id, mode = 'camera') {
             const { data: { session } } = await supabaseClient.auth.getSession();
             const res = await fetch('/api/upload-temp-photo', {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${session?.access_token}` },
+                headers: { 'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}` },
                 body: formData
             });
             
@@ -866,7 +866,7 @@ async function deleteTempPhoto(photoId, fileId) {
         const { data: { session } } = await supabaseClient.auth.getSession();
         await fetch(`/api/delete-temp-photo/${fileId}`, {
             method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            headers: { 'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}` }
         });
     } catch (e) {
         console.warn("Erro ao deletar foto do Drive:", e);
@@ -888,7 +888,7 @@ async function submitDelivery(whatsappPhone = null, btn, originalText) {
         numero_documento: document.getElementById('doc-number').value,
         data_entrega: new Date().toISOString(),
         tipo_entrega: 'motorista',
-        lat: currentCoords?.lat, lng: currentCoords?.lng,
+        lat: (currentCoords ? currentCoords.lat : null), lng: (currentCoords ? currentCoords.lng : null),
         fotos_pre_carregadas: photoUrls,
         whatsapp_phone: whatsappPhone,
         cilindros: Array.from(document.querySelectorAll('.item-card')).map(card => ({
@@ -927,7 +927,7 @@ async function submitDelivery(whatsappPhone = null, btn, originalText) {
             method: 'POST', 
             headers: { 
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session?.access_token}` 
+                'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}` 
             }, 
             body: JSON.stringify(payload)
         });
@@ -999,7 +999,7 @@ async function openWhatsAppCheckoutModal(btn, originalText) {
     };
 
     const docClean = document.getElementById('client-doc').value.replace(/\D/g, '');
-    const clientNameVal = (document.getElementById('client-name')?.value || "").trim().toUpperCase();
+    const clientNameVal = ((document.getElementById('client-name') ? document.getElementById('client-name').value : '') || "").trim().toUpperCase();
 
     let storedPhone = "";
 
@@ -1105,7 +1105,7 @@ async function checkWhatsAppStatus() {
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
         const res = await fetch('/api/whatsapp/status', {
-            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            headers: { 'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}` }
         });
         if (res.ok) {
             const data = await res.json();
@@ -1156,7 +1156,7 @@ async function generateWhatsAppQR() {
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
         const res = await fetch('/api/whatsapp/qr', {
-            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            headers: { 'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}` }
         });
         if (res.ok) {
             const data = await res.json();
@@ -1188,7 +1188,7 @@ async function disconnectWhatsApp() {
         const { data: { session } } = await supabaseClient.auth.getSession();
         const res = await fetch('/api/whatsapp/disconnect', {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            headers: { 'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}` }
         });
         showToast("Instância desconectada com sucesso!");
         setTimeout(checkWhatsAppStatus, 1500);
@@ -1230,7 +1230,7 @@ async function loadGoogleDriveConfig() {
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
         const res = await fetch('/api/admin/google-drive-config', {
-            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            headers: { 'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}` }
         });
         if (res.ok) {
             const data = await res.json();
@@ -1285,7 +1285,7 @@ async function saveGoogleDriveConfig(e) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session?.access_token}`
+                'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}`
             },
             body: JSON.stringify(payload)
         });
@@ -1342,7 +1342,7 @@ async function testGoogleDriveConfig() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session?.access_token}`
+                'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}`
             },
             body: JSON.stringify(payload)
         });
@@ -1393,7 +1393,7 @@ async function loginGoogleDriveOAuth() {
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
         const res = await fetch('/api/admin/google-drive/auth-url', {
-            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            headers: { 'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}` }
         });
         
         if (res.ok) {
@@ -1439,7 +1439,7 @@ async function deleteDelivery(id) {
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
         const res = await fetch(`/api/deletar_entrega/${id}`, {
-            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            headers: { 'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}` }
         });
         if (res.ok) {
             showToast("Entrega excluída!");
@@ -1456,9 +1456,9 @@ async function loadHistory() {
     if (!resDiv) return;
     resDiv.innerHTML = '<p style="text-align:center; padding:1rem;"><i class="fas fa-spinner fa-spin"></i> Buscando...</p>';
     
-    const start = document.getElementById('filter-start')?.value || "";
-    const end = document.getElementById('filter-end')?.value || "";
-    const search = document.getElementById('filter-search')?.value || "";
+    const start = (document.getElementById('filter-start') ? document.getElementById('filter-start').value : '') || "";
+    const end = (document.getElementById('filter-end') ? document.getElementById('filter-end').value : '') || "";
+    const search = (document.getElementById('filter-search') ? document.getElementById('filter-search').value : '') || "";
     
     try {
         const res = await fetch(`/api/entregas/filtro?start_date=${start}&end_date=${end}&search=${encodeURIComponent(search)}`);
@@ -1564,7 +1564,7 @@ async function deleteClient(cnpj) {
         const { data: { session } } = await supabaseClient.auth.getSession();
         const res = await fetch(`/api/clientes/${cnpj}`, {
             method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            headers: { 'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}` }
         });
         if (res.ok) {
             showToast("Cliente excluído!");
@@ -1651,7 +1651,7 @@ function renderClientsList(clients) {
 }
 
 function filterClientsList() {
-    const term = document.getElementById('client-search')?.value.toLowerCase() || "";
+    const term = (document.getElementById('client-search') ? document.getElementById('client-search').value : '').toLowerCase() || "";
     renderClientsList(allClients.filter(c => 
         (c.nome_razao && c.nome_razao.toLowerCase().includes(term)) || 
         (c.cnpj && c.cnpj.includes(term))
@@ -1661,12 +1661,12 @@ function filterClientsList() {
 function saveDraft() {
     isDirty = true;
     const data = {
-        clientDoc: document.getElementById('client-doc')?.value || "",
-        clientName: document.getElementById('client-name')?.value || "",
-        docNumber: document.getElementById('doc-number')?.value || "",
+        clientDoc: (document.getElementById('client-doc') ? document.getElementById('client-doc').value : '') || "",
+        clientName: (document.getElementById('client-name') ? document.getElementById('client-name').value : '') || "",
+        docNumber: (document.getElementById('doc-number') ? document.getElementById('doc-number').value : '') || "",
         preUploadedPhotos: preUploadedPhotos,
         items: Array.from(document.querySelectorAll('.item-card')).map(card => {
-            const labelText = card.querySelector('b')?.innerText || "";
+            const labelText = (card.querySelector('b') ? card.querySelector('b').innerText : '') || "";
             const id = labelText.replace(/\D/g, '') || "1";
             const photos = Array.from(card.querySelectorAll('.photo-preview-container')).map(p => ({
                 id: p.id,
@@ -2018,7 +2018,7 @@ async function saveManualLocation() {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session?.access_token}`
+                'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}`
             },
             body: JSON.stringify({ cnpj, lat, lng })
         });
@@ -2067,7 +2067,7 @@ async function deleteClientLocation(cnpj) {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session?.access_token}`
+                'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}`
             },
             body: JSON.stringify({ cnpj, lat: null, lng: null })
         });
@@ -2099,7 +2099,7 @@ async function loadUsers() {
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
         const res = await fetch('/api/admin/usuarios', {
-            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            headers: { 'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}` }
         });
         
         if (res.ok) {
@@ -2224,7 +2224,7 @@ async function saveUserForm(event) {
                 method: 'PUT',
                 headers: { 
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session?.access_token}`
+                    'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}`
                 },
                 body: JSON.stringify(payload)
             });
@@ -2234,7 +2234,7 @@ async function saveUserForm(event) {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session?.access_token}`
+                    'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}`
                 },
                 body: JSON.stringify(payload)
             });
@@ -2262,7 +2262,7 @@ async function deleteUser(userId) {
         const { data: { session } } = await supabaseClient.auth.getSession();
         const res = await fetch(`/api/admin/usuarios/${userId}`, {
             method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            headers: { 'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}` }
         });
         
         if (res.ok) {
@@ -2378,7 +2378,7 @@ async function saveGasForm(event) {
                 method: 'PUT',
                 headers: { 
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session?.access_token}`
+                    'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}`
                 },
                 body: JSON.stringify(payload)
             });
@@ -2387,7 +2387,7 @@ async function saveGasForm(event) {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session?.access_token}`
+                    'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}`
                 },
                 body: JSON.stringify(payload)
             });
@@ -2426,7 +2426,7 @@ async function deleteGas(gasId) {
         const { data: { session } } = await supabaseClient.auth.getSession();
         const res = await fetch(`/api/gases/${gasId}`, {
             method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            headers: { 'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}` }
         });
         
         if (res.ok) {
@@ -2457,7 +2457,7 @@ async function resendWhatsApp(id, clientName) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session?.access_token}`
+                'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}`
             },
             body: JSON.stringify({ whatsapp_phone: phone })
         });
@@ -2623,7 +2623,7 @@ async function syncPendingDeliveries() {
                         
                         const photoRes = await fetch('/api/upload-temp-photo', {
                             method: 'POST',
-                            headers: { 'Authorization': `Bearer ${session?.access_token}` },
+                            headers: { 'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}` },
                             body: formData
                         });
                         
@@ -2663,7 +2663,7 @@ async function syncPendingDeliveries() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session?.access_token}`
+                    'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}`
                 },
                 body: JSON.stringify(finalPayload)
             });
