@@ -254,8 +254,33 @@ document.addEventListener('click', (e) => {
     if (clientDoc) {
         if (typeof loadClients === 'function') loadClients();
         const handleDocCheck = (e) => {
-            renderDocAutocomplete(e.target.value);
-            let val = e.target.value.replace(/\D/g, '');
+            const rawInput = e.target.value;
+            let val = rawInput.replace(/\D/g, '');
+
+            renderDocAutocomplete(rawInput);
+
+            // Auto-preenchimento instantâneo da Razão Social conforme os dígitos vão sendo digitados
+            if (val.length >= 2 && allClients && allClients.length > 0) {
+                const match = allClients.find(c => {
+                    const cleanCnpj = (c.cnpj || '').replace(/\D/g, '');
+                    return cleanCnpj.startsWith(val) || cleanCnpj.includes(val);
+                });
+
+                if (match) {
+                    const clientName = document.getElementById('client-name');
+                    if (clientName && (!clientName.value || clientName.getAttribute('data-auto') === 'true' || clientName.value !== match.nome_razao.toUpperCase())) {
+                        clientName.value = match.nome_razao.toUpperCase();
+                        clientName.setAttribute('data-auto', 'true');
+                    }
+                    if (match.telefone) {
+                        localStorage.setItem(`phone_${val}`, match.telefone);
+                        if (match.cnpj) {
+                            localStorage.setItem(`phone_${match.cnpj.replace(/\D/g, '')}`, match.telefone);
+                        }
+                    }
+                }
+            }
+
             if (val.length <= 11) {
                 e.target.value = val.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/g, "$1.$2.$3-$4");
             } else {

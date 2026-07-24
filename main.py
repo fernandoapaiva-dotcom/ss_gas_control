@@ -1257,5 +1257,13 @@ async def disconnect_whatsapp(current_user: dict = Depends(get_current_user)):
             return {"status": "error", "message": str(e)}
 
 # --- STATIC FILES ---
+class NoCacheStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
 app.mount("/assets", StaticFiles(directory="assets"), name="assets")
-app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
+app.mount("/", NoCacheStaticFiles(directory="frontend", html=True), name="frontend")
