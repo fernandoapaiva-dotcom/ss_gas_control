@@ -178,7 +178,7 @@
                     <div class="filter-grid" style="margin-bottom: 1rem;">
                         <input type="date" id="filter-start" class="form-control" onchange="loadHistory()">
                         <input type="date" id="filter-end" class="form-control" onchange="loadHistory()">
-                        <input type="text" id="filter-search" class="form-control" style="grid-column: span 2;" placeholder="Buscar por Nome ou Documento..." onkeyup="loadHistory()">
+                        <input type="text" id="filter-search" class="form-control" style="grid-column: span 2;" placeholder="Buscar por Nome, NF, Gás ou Validade (ex: 06/25)..." oninput="loadHistory()" onkeyup="loadHistory()" onchange="loadHistory()">
                     </div>
                     <div id="history-results"></div>
                 </div>
@@ -510,7 +510,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="leaflet.js?v=20260724_06"></script>
-    <script src="app.js?v=20260724_06"></script>
+    <script src="leaflet.js?v=20260724_07"></script>
+    <script src="app.js?v=20260724_07"></script>
 </body>
 </html>

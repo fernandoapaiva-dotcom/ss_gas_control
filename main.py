@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, HTTPException, Depends, UploadFile, File, Form, BackgroundTasks
-from sqlalchemy import create_engine, and_
+from sqlalchemy import create_engine, and_, or_
 from sqlalchemy.orm import sessionmaker, Session
 from models import Base, Usuario, Cliente, Entrega, CilindroAplicado, Gas
 from storage import upload_file_to_drive, upload_temp_file_to_drive, delete_file_from_drive, get_drive_service, get_google_config, CONFIG_PATH
@@ -849,6 +849,43 @@ async def create_entrega(
 
     return {"status": "success", "id": entrega.id, "photos": fotos_pre_carregadas}
 
+def generate_search_variants(term: str) -> list:
+    if not term or not term.strip():
+        return []
+    term = term.strip()
+    variants = [term]
+    
+    import re
+    # 1. Padrao MM/YY (ex: 06/25 ou 6/25 ou 06-25)
+    match_mmyy = re.match(r"^(\d{1,2})[/.-](\d{2})$", term)
+    if match_mmyy:
+        m = match_mmyy.group(1).zfill(2)
+        yy = match_mmyy.group(2)
+        yyyy = f"20{yy}"
+        variants.extend([f"{yyyy}-{m}", f"{m}/{yyyy}", f"{m}/{yy}", yyyy, f"{int(m)}/{yyyy}", f"{int(m)}/{yy}"])
+        
+    # 2. Padrao MM/YYYY (ex: 06/2025 ou 6/2025)
+    match_mmyyyy = re.match(r"^(\d{1,2})[/.-](\d{4})$", term)
+    if match_mmyyyy:
+        m = match_mmyyyy.group(1).zfill(2)
+        yyyy = match_mmyyyy.group(2)
+        yy = yyyy[2:]
+        variants.extend([f"{yyyy}-{m}", f"{m}/{yyyy}", f"{m}/{yy}", yyyy, f"{int(m)}/{yyyy}"])
+
+    # 3. Padrao YYYY-MM (ex: 2025-06)
+    match_yyyymm = re.match(r"^(\d{4})[/.-](\d{1,2})$", term)
+    if match_yyyymm:
+        yyyy = match_yyyymm.group(1)
+        m = match_yyyymm.group(2).zfill(2)
+        yy = yyyy[2:]
+        variants.extend([f"{yyyy}-{m}", f"{m}/{yyyy}", f"{m}/{yy}", yyyy])
+        
+    res = []
+    for v in variants:
+        if v not in res:
+            res.append(v)
+    return res
+
 @app.get("/api/entregas/filtro")
 async def filtrar_entregas(
     start_date: Optional[str] = None,
@@ -867,15 +904,22 @@ async def filtrar_entregas(
         try:
             query = query.filter(Entrega.data_entrega <= datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59))
         except: pass
-    if search:
-        query = query.filter(
-            (Cliente.nome_razao.ilike(f"%{search}%")) |
-            (Cliente.cnpj.ilike(f"%{search}%")) |
-            (Entrega.nome_cliente.ilike(f"%{search}%")) |
-            (Entrega.numero_documento.ilike(f"%{search}%")) |
-            Entrega.cilindros.any(CilindroAplicado.data_validade.ilike(f"%{search}%")) |
-            Entrega.cilindros.any(CilindroAplicado.observacao.ilike(f"%{search}%"))
-        )
+    if search and search.strip():
+        search_terms = generate_search_variants(search)
+        conditions = []
+        for t in search_terms:
+            conditions.extend([
+                Cliente.nome_razao.ilike(f"%{t}%"),
+                Cliente.cnpj.ilike(f"%{t}%"),
+                Entrega.nome_cliente.ilike(f"%{t}%"),
+                Entrega.numero_documento.ilike(f"%{t}%"),
+                Entrega.cilindros.any(CilindroAplicado.tipo_gas.ilike(f"%{t}%")),
+                Entrega.cilindros.any(CilindroAplicado.tamanho_gas.ilike(f"%{t}%")),
+                Entrega.cilindros.any(CilindroAplicado.marca.ilike(f"%{t}%")),
+                Entrega.cilindros.any(CilindroAplicado.data_validade.ilike(f"%{t}%")),
+                Entrega.cilindros.any(CilindroAplicado.observacao.ilike(f"%{t}%")),
+            ])
+        query = query.filter(or_(*conditions))
 
     entregas = query.order_by(Entrega.data_entrega.desc()).limit(50).all()
 
