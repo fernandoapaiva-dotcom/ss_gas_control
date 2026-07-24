@@ -149,6 +149,81 @@ function setupEventListeners() {
         };
     }
 
+    const clientDoc = document.getElementById('client-doc');
+    const docError = document.getElementById('client-doc-error');
+    if (clientDoc) {
+        if (typeof loadClients === 'function') loadClients();
+        const handleDocCheck = (e) => {
+            const rawInput = e.target.value;
+            let val = rawInput.replace(/\D/g, '');
+
+            renderDocAutocomplete(rawInput);
+
+            // Auto-preenchimento instantâneo da Razão Social conforme os dígitos vão sendo digitados
+            if (val.length >= 2 && typeof allClients !== 'undefined' && allClients && allClients.length > 0) {
+                const match = allClients.find(function(c) {
+                    const cleanCnpj = (c.cnpj || '').replace(/\D/g, '');
+                    return cleanCnpj.indexOf(val) === 0 || cleanCnpj.indexOf(val) !== -1;
+                });
+
+                if (match) {
+                    const clientName = document.getElementById('client-name');
+                    if (clientName && (!clientName.value || clientName.getAttribute('data-auto') === 'true' || clientName.value !== match.nome_razao.toUpperCase())) {
+                        clientName.value = match.nome_razao.toUpperCase();
+                        clientName.setAttribute('data-auto', 'true');
+                    }
+                    if (match.telefone) {
+                        localStorage.setItem('phone_' + val, match.telefone);
+                        if (match.cnpj) {
+                            localStorage.setItem('phone_' + match.cnpj.replace(/\D/g, ''), match.telefone);
+                        }
+                    }
+                }
+            }
+
+            if (val.length <= 11) {
+                e.target.value = val.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/g, "$1.$2.$3-$4");
+            } else {
+                e.target.value = val.substring(0,14).replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/g, "$1.$2.$3/$4-$5");
+            }
+            val = e.target.value.replace(/\D/g, '');
+            
+            if (val.length === 11) {
+                if (!validarCPF(val)) {
+                    if (docError) { docError.style.display = 'block'; docError.innerText = 'CPF inválido'; }
+                } else {
+                    if (docError) docError.style.display = 'none';
+                    searchClient(val);
+                }
+            } else if (val.length === 14) {
+                if (!validarCNPJ(val)) {
+                    if (docError) { docError.style.display = 'block'; docError.innerText = 'CNPJ inválido'; }
+                } else {
+                    if (docError) docError.style.display = 'none';
+                    searchClient(val);
+                }
+            } else if (val.length > 0) {
+                if (docError) { docError.style.display = 'block'; docError.innerText = 'Documento incompleto'; }
+            } else {
+                if (docError) docError.style.display = 'none';
+            }
+            saveDraft();
+        };
+
+        clientDoc.oninput = handleDocCheck;
+        clientDoc.onchange = handleDocCheck;
+        clientDoc.onkeyup = handleDocCheck;
+    }
+
+    const clientNameInput = document.getElementById('client-name');
+    if (clientNameInput) {
+        clientNameInput.oninput = function(e) {
+            e.target.value = e.target.value.toUpperCase();
+            renderDocAutocomplete(e.target.value);
+            saveDraft();
+        };
+    }
+
 async function renderDocAutocomplete(term) {
     const box = document.getElementById('client-doc-autocomplete');
     if (!box) return;
@@ -249,89 +324,10 @@ document.addEventListener('click', (e) => {
     }
 });
 
-    const clientDoc = document.getElementById('client-doc');
-    const docError = document.getElementById('client-doc-error');
-    if (clientDoc) {
-        if (typeof loadClients === 'function') loadClients();
-        const handleDocCheck = (e) => {
-            const rawInput = e.target.value;
-            let val = rawInput.replace(/\D/g, '');
-
-            renderDocAutocomplete(rawInput);
-
-            // Auto-preenchimento instantâneo da Razão Social conforme os dígitos vão sendo digitados
-            if (val.length >= 2 && allClients && allClients.length > 0) {
-                const match = allClients.find(c => {
-                    const cleanCnpj = (c.cnpj || '').replace(/\D/g, '');
-                    return cleanCnpj.startsWith(val) || cleanCnpj.includes(val);
-                });
-
-                if (match) {
-                    const clientName = document.getElementById('client-name');
-                    if (clientName && (!clientName.value || clientName.getAttribute('data-auto') === 'true' || clientName.value !== match.nome_razao.toUpperCase())) {
-                        clientName.value = match.nome_razao.toUpperCase();
-                        clientName.setAttribute('data-auto', 'true');
-                    }
-                    if (match.telefone) {
-                        localStorage.setItem(`phone_${val}`, match.telefone);
-                        if (match.cnpj) {
-                            localStorage.setItem(`phone_${match.cnpj.replace(/\D/g, '')}`, match.telefone);
-                        }
-                    }
-                }
-            }
-
-            if (val.length <= 11) {
-                e.target.value = val.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/g, "$1.$2.$3-$4");
-            } else {
-                e.target.value = val.substring(0,14).replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/g, "$1.$2.$3/$4-$5");
-            }
-            val = e.target.value.replace(/\D/g, '');
-            
-            if (val.length === 11) {
-                if (!validarCPF(val)) {
-                    docError.style.display = 'block';
-                    docError.innerText = 'CPF inválido';
-                } else {
-                    docError.style.display = 'none';
-                    searchClient(val);
-                }
-            } else if (val.length === 14) {
-                if (!validarCNPJ(val)) {
-                    docError.style.display = 'block';
-                    docError.innerText = 'CNPJ inválido';
-                } else {
-                    docError.style.display = 'none';
-                    searchClient(val);
-                }
-            } else if (val.length > 0) {
-                docError.style.display = 'block';
-                docError.innerText = 'Documento incompleto';
-            } else {
-                docError.style.display = 'none';
-            }
-            saveDraft();
-        };
-
-        clientDoc.oninput = handleDocCheck;
-        clientDoc.onchange = handleDocCheck;
-        clientDoc.onblur = handleDocCheck;
-        clientDoc.onkeyup = (e) => {
-            const val = e.target.value.replace(/\D/g, '');
-            if (val.length === 11 || val.length === 14) {
-                handleDocCheck(e);
-            }
-        };
+    const addItemBtn = document.getElementById('add-item');
+    if (addItemBtn) {
+        addItemBtn.onclick = () => { addItem(); saveDraft(); };
     }
-    const clientNameInput = document.getElementById('client-name');
-    if (clientNameInput) {
-        clientNameInput.oninput = (e) => {
-            e.target.value = e.target.value.toUpperCase();
-            renderDocAutocomplete(e.target.value);
-            saveDraft();
-        };
-    }
-    document.getElementById('add-item').onclick = () => { addItem(); saveDraft(); };
     document.getElementById('delivery-form').onsubmit = async (e) => {
         e.preventDefault();
         
