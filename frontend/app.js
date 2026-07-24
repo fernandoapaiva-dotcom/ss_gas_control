@@ -172,12 +172,6 @@ function setupEventListeners() {
                         clientName.value = match.nome_razao.toUpperCase();
                         clientName.setAttribute('data-auto', 'true');
                     }
-                    if (match.telefone) {
-                        localStorage.setItem('phone_' + val, match.telefone);
-                        if (match.cnpj) {
-                            localStorage.setItem('phone_' + match.cnpj.replace(/\D/g, ''), match.telefone);
-                        }
-                    }
                 }
             }
 
@@ -998,41 +992,40 @@ async function openWhatsAppCheckoutModal(btn, originalText) {
     const clientNameVal = ((document.getElementById('client-name') ? document.getElementById('client-name').value : '') || "").trim().toUpperCase();
 
     let storedPhone = "";
+    const queryTerm = docClean || clientNameVal;
 
-    // 1. Busca imediata no localStorage por CNPJ ou por Nome
-    if (docClean && localStorage.getItem(`phone_${docClean}`)) {
-        storedPhone = localStorage.getItem(`phone_${docClean}`);
-    }
-    if (!storedPhone && clientNameVal && localStorage.getItem(`phone_name_${clientNameVal}`)) {
-        storedPhone = localStorage.getItem(`phone_name_${clientNameVal}`);
+    // 1. Consulta prioritária direta ao Banco de Dados da OCI (fonte da verdade)
+    if (queryTerm) {
+        try {
+            const res = await fetch(`/api/busca-cliente?term=${encodeURIComponent(queryTerm)}&t=${Date.now()}`);
+            if (res.ok) {
+                const clientData = await res.json();
+                if (clientData.status === 'success' && clientData.telefone) {
+                    storedPhone = clientData.telefone;
+                    if (docClean) localStorage.setItem(`phone_${docClean}`, storedPhone);
+                    if (clientNameVal) localStorage.setItem(`phone_name_${clientNameVal}`, storedPhone);
+                }
+            }
+        } catch (e) {}
     }
 
-    // 2. Busca na lista de clientes em memória (allClients)
+    // 2. Fallback para a memória local (allClients) ou localStorage caso a nuvem não responda
     if (!storedPhone && typeof allClients !== 'undefined' && allClients && allClients.length > 0) {
-        const found = allClients.find(c => 
-            (docClean && c.cnpj && c.cnpj.replace(/\D/g, '') === docClean) ||
-            (clientNameVal && c.nome_razao && c.nome_razao.toUpperCase() === clientNameVal)
-        );
+        const found = allClients.find(function(c) {
+            return (docClean && c.cnpj && c.cnpj.replace(/\D/g, '') === docClean) ||
+                   (clientNameVal && c.nome_razao && c.nome_razao.toUpperCase() === clientNameVal);
+        });
         if (found && found.telefone) {
             storedPhone = found.telefone;
         }
     }
 
-    // 3. Busca no servidor OCI via endpoint seguro com parâmetro term
     if (!storedPhone) {
-        const queryTerm = docClean || clientNameVal;
-        if (queryTerm) {
-            try {
-                const res = await fetch(`/api/busca-cliente?term=${encodeURIComponent(queryTerm)}&t=${Date.now()}`);
-                if (res.ok) {
-                    const clientData = await res.json();
-                    if (clientData.status === 'success' && clientData.telefone) {
-                        storedPhone = clientData.telefone;
-                        if (docClean) localStorage.setItem(`phone_${docClean}`, storedPhone);
-                        if (clientNameVal) localStorage.setItem(`phone_name_${clientNameVal}`, storedPhone);
-                    }
-                }
-            } catch (e) {}
+        if (docClean && localStorage.getItem(`phone_${docClean}`)) {
+            storedPhone = localStorage.getItem(`phone_${docClean}`);
+        }
+        if (!storedPhone && clientNameVal && localStorage.getItem(`phone_name_${clientNameVal}`)) {
+            storedPhone = localStorage.getItem(`phone_name_${clientNameVal}`);
         }
     }
 
@@ -1086,6 +1079,17 @@ async function openWhatsAppCheckoutModal(btn, originalText) {
             
             if (docClean) localStorage.setItem(`phone_${docClean}`, rawPhone);
             if (clientNameVal) localStorage.setItem(`phone_name_${clientNameVal}`, rawPhone);
+            
+            // Atualiza imediatamente na memória local allClients
+            if (typeof allClients !== 'undefined' && allClients) {
+                for (let i = 0; i < allClients.length; i++) {
+                    if ((docClean && allClients[i].cnpj && allClients[i].cnpj.replace(/\D/g, '') === docClean) ||
+                        (clientNameVal && allClients[i].nome_razao && allClients[i].nome_razao.toUpperCase() === clientNameVal)) {
+                        allClients[i].telefone = rawPhone;
+                    }
+                }
+            }
+
             modal.style.display = 'none';
             submitDelivery(rawPhone, btn, originalText);
         };
