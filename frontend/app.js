@@ -149,14 +149,23 @@ function setupEventListeners() {
         };
     }
 
-function renderDocAutocomplete(term) {
+async function renderDocAutocomplete(term) {
     const box = document.getElementById('client-doc-autocomplete');
     if (!box) return;
     
-    if (!term || term.length < 2 || !allClients || allClients.length === 0) {
+    if (!term || term.trim().length < 1) {
         box.style.display = 'none';
         box.innerHTML = '';
         return;
+    }
+
+    if (!allClients || allClients.length === 0) {
+        try {
+            const res = await fetch('/api/clientes');
+            if (res.ok) {
+                allClients = await res.json();
+            }
+        } catch (e) {}
     }
     
     const cleanTerm = term.replace(/\D/g, '');
@@ -945,20 +954,25 @@ async function openWhatsAppCheckoutModal(btn, originalText) {
         };
     }
 
-    let storedPhone = localStorage.getItem(`phone_${cnpjVal}`) || "";
-
-    // Se não encontrou no localStorage local, busca no servidor pelo CNPJ
-    if (!storedPhone && cnpjVal) {
+    let storedPhone = "";
+    const clientNameVal = document.getElementById('client-name')?.value || "";
+    const queryTerm = cnpjVal || clientNameVal;
+    
+    if (queryTerm) {
         try {
-            const res = await fetch(`/api/cnpj/${cnpjVal}`);
+            const res = await fetch(`/api/cnpj/${encodeURIComponent(queryTerm)}`);
             if (res.ok) {
                 const clientData = await res.json();
                 if (clientData.telefone) {
                     storedPhone = clientData.telefone;
-                    localStorage.setItem(`phone_${cnpjVal}`, storedPhone);
+                    if (cnpjVal) localStorage.setItem(`phone_${cnpjVal}`, storedPhone);
                 }
             }
         } catch (e) {}
+    }
+
+    if (!storedPhone && cnpjVal) {
+        storedPhone = localStorage.getItem(`phone_${cnpjVal}`) || "";
     }
 
     const formatPhone = (num) => {

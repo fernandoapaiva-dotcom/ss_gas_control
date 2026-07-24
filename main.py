@@ -666,9 +666,14 @@ def delete_gas(gas_id: int, db: Session = Depends(get_db), current_user: dict = 
 async def focus_cnpj(documento: str, db: Session = Depends(get_db)):
     print(f"[RASTREIO] Buscando CNPJ: {documento}")
     doc_limpo = ''.join(filter(str.isdigit, documento))
-    cliente = db.query(Cliente).filter(Cliente.cnpj == doc_limpo).first()
+    cliente = None
+    if doc_limpo:
+        cliente = db.query(Cliente).filter(Cliente.cnpj == doc_limpo).first()
+    if not cliente and len(documento.strip()) >= 3:
+        cliente = db.query(Cliente).filter(Cliente.nome_razao.ilike(f"%{documento.strip()}%")).first()
+
     if cliente:
-        return {"cnpj": cliente.cnpj, "nome_razao": cliente.nome_razao, "telefone": cliente.telefone, "fonte": "local"}
+        return {"cnpj": cliente.cnpj or doc_limpo, "nome_razao": cliente.nome_razao.upper(), "telefone": cliente.telefone, "fonte": "local"}
 
     if len(doc_limpo) == 14:
         headers = {
@@ -731,7 +736,8 @@ async def create_entrega(
     current_user: dict = Depends(get_current_user)
 ):
     print(f"\n--- [RASTREIO] NOVA REQUISIÇÃO RECEBIDA (JSON) ---")
-    cnpj = payload.get('cnpj')
+    raw_cnpj = payload.get('cnpj') or ''
+    cnpj = ''.join(filter(str.isdigit, str(raw_cnpj)))
     raw_nome = payload.get('nome_cliente') or 'CLIENTE NOVO'
     nome_cliente = raw_nome.strip().upper()
     numero_documento = payload.get('numero_documento')
@@ -741,13 +747,19 @@ async def create_entrega(
     fotos_pre_carregadas = payload.get('fotos_pre_carregadas', [])
     whatsapp_phone = payload.get('whatsapp_phone')
 
-    cliente = db.query(Cliente).filter(Cliente.cnpj == cnpj).first()
+    cliente = None
+    if cnpj:
+        cliente = db.query(Cliente).filter(Cliente.cnpj == cnpj).first()
+    if not cliente and nome_cliente:
+        cliente = db.query(Cliente).filter(Cliente.nome_razao == nome_cliente).first()
+
     if not cliente:
-        cliente = Cliente(cnpj=cnpj, nome_razao=nome_cliente, telefone=whatsapp_phone, lat=payload.get('lat'), lng=payload.get('lng'))
+        cliente = Cliente(cnpj=cnpj or None, nome_razao=nome_cliente, telefone=whatsapp_phone, lat=payload.get('lat'), lng=payload.get('lng'))
         db.add(cliente)
         db.commit()
         db.refresh(cliente)
     else:
+        cliente.nome_razao = nome_cliente
         if whatsapp_phone:
             cliente.telefone = whatsapp_phone
         if payload.get('lat'):
