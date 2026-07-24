@@ -1425,7 +1425,7 @@ async function loadHistory() {
             <div class="history-item" onclick="toggleDetails(${item.id})" style="cursor:pointer; margin-bottom:12px; border-left:4px solid var(--primary); padding:12px; background:white; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <div style="flex:1;">
-                        <h4 style="margin:0; font-size:0.95rem; color:var(--dark);">${item.cliente || "Cliente Desconhecido"}</h4>
+                        <h4 style="margin:0; font-size:0.95rem; color:var(--dark); text-transform: uppercase;">${(item.cliente || "CLIENTE DESCONHECIDO").toUpperCase()}</h4>
                         <p style="margin:4px 0 0; color:#666; font-size:0.8rem;">
                             <i class="far fa-calendar-alt"></i> ${item.data ? new Date(item.data).toLocaleDateString('pt-BR') : 'Data n/a'} 
                             - <i class="fas fa-file-invoice"></i> NF: ${item.nf || 'S/N'}
@@ -1547,7 +1547,7 @@ function renderClientsList(clients) {
         <div class="list-item" style="padding: 16px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); border-top: 4px solid var(--primary); display: flex; flex-direction: column; justify-content: space-between; min-height: 220px; transition: transform 0.2s, box-shadow 0.2s; position: relative; margin-bottom: 0;">
             <div>
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
-                    <h4 style="margin: 0 0 6px 0; font-size: 0.95rem; color: var(--dark); line-height: 1.3; font-weight: 700; word-break: break-word; flex: 1;">${c.nome_razao || "Sem Nome"}</h4>
+                    <h4 style="margin: 0 0 6px 0; font-size: 0.95rem; color: var(--dark); line-height: 1.3; font-weight: 700; word-break: break-word; flex: 1; text-transform: uppercase;">${(c.nome_razao || "SEM NOME").toUpperCase()}</h4>
                     ${isAdmin ? `
                         <div style="display: flex; gap: 4px;">
                             ${hasLocation ? `
