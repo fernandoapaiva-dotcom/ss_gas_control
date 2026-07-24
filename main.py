@@ -850,7 +850,7 @@ async def filtrar_entregas(
                 nome = c.nome_razao
         if not nome:
             nome = e.nome_cliente
-        nome = nome or "Cliente Desconhecido"
+        nome = (nome or "CLIENTE DESCONHECIDO").upper()
 
         print(f"ID: {e.id} | Cliente: {nome} | Data: {e.data_entrega} | NF: {e.numero_documento}")
 
@@ -862,7 +862,7 @@ async def filtrar_entregas(
             "id": e.id,
             "data": e.data_entrega.strftime("%Y-%m-%dT%H:%M:%S") if e.data_entrega else None,
             "nf": e.numero_documento or "S/N",
-            "cliente": nome,
+            "cliente": nome.upper(),
             "operador": nome_operador,
             "fotos": e.fotos_urls.split(",") if e.fotos_urls else [],
             "itens": [{"gas": i.tipo_gas, "tam": i.tamanho_gas, "qtd": i.quantidade, "validade": i.data_validade, "obs": i.observacao, "marca": i.marca} for i in e.cilindros]

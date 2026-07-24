@@ -149,10 +149,103 @@ function setupEventListeners() {
         };
     }
 
+function renderDocAutocomplete(term) {
+    const box = document.getElementById('client-doc-autocomplete');
+    if (!box) return;
+    
+    if (!term || term.length < 2 || !allClients || allClients.length === 0) {
+        box.style.display = 'none';
+        box.innerHTML = '';
+        return;
+    }
+    
+    const cleanTerm = term.replace(/\D/g, '');
+    const lowerTerm = term.toLowerCase().trim();
+    
+    const matches = allClients.filter(c => {
+        const cleanCnpj = (c.cnpj || '').replace(/\D/g, '');
+        const lowerName = (c.nome_razao || '').toLowerCase();
+        return (cleanTerm && cleanCnpj.includes(cleanTerm)) || (lowerName && lowerName.includes(lowerTerm));
+    }).slice(0, 6);
+    
+    if (matches.length === 0) {
+        box.style.display = 'none';
+        box.innerHTML = '';
+        return;
+    }
+    
+    box.innerHTML = matches.map(c => {
+        const formattedName = (c.nome_razao || '').toUpperCase();
+        const formattedCnpj = c.cnpj.length === 11 
+            ? c.cnpj.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")
+            : (c.cnpj.length === 14 ? c.cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5") : c.cnpj);
+        const phoneInfo = c.telefone ? `<span style="color: #2e7d32; font-weight: 600; font-size: 0.75rem;"><i class="fab fa-whatsapp"></i> ${c.telefone}</span>` : '';
+        
+        return `
+            <div class="autocomplete-item" data-cnpj="${c.cnpj}" data-nome="${formattedName}" data-phone="${c.telefone || ''}" style="padding: 10px 14px; border-bottom: 1px solid #f0f0f0; cursor: pointer; text-align: left; transition: background 0.15s ease;">
+                <div style="font-weight: 700; font-size: 0.88rem; color: #222;">${formattedName}</div>
+                <div style="font-size: 0.78rem; color: #666; display: flex; justify-content: space-between; align-items: center; margin-top: 2px;">
+                    <span><i class="fas fa-id-card" style="color: #888; font-size: 0.75rem;"></i> ${formattedCnpj}</span>
+                    ${phoneInfo}
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    box.style.display = 'block';
+    
+    box.querySelectorAll('.autocomplete-item').forEach(el => {
+        el.onmouseenter = () => { el.style.background = '#f5f7fa'; };
+        el.onmouseleave = () => { el.style.background = '#ffffff'; };
+        el.onclick = (e) => {
+            e.stopPropagation();
+            const rawCnpj = el.getAttribute('data-cnpj');
+            const nome = el.getAttribute('data-nome');
+            const phone = el.getAttribute('data-phone');
+            
+            const clientDoc = document.getElementById('client-doc');
+            const clientName = document.getElementById('client-name');
+            const docError = document.getElementById('client-doc-error');
+            
+            if (clientDoc) {
+                const val = rawCnpj.replace(/\D/g, '');
+                if (val.length === 11) {
+                    clientDoc.value = val.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+                } else if (val.length === 14) {
+                    clientDoc.value = val.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
+                } else {
+                    clientDoc.value = rawCnpj;
+                }
+            }
+            
+            if (clientName) {
+                clientName.value = nome.toUpperCase();
+            }
+            
+            if (phone) {
+                localStorage.setItem(`phone_${rawCnpj.replace(/\D/g, '')}`, phone);
+            }
+            
+            if (docError) docError.style.display = 'none';
+            box.style.display = 'none';
+            saveDraft();
+        };
+    });
+}
+
+document.addEventListener('click', (e) => {
+    const box = document.getElementById('client-doc-autocomplete');
+    if (box && !box.contains(e.target) && e.target.id !== 'client-doc') {
+        box.style.display = 'none';
+    }
+});
+
     const clientDoc = document.getElementById('client-doc');
     const docError = document.getElementById('client-doc-error');
     if (clientDoc) {
+        if (typeof loadClients === 'function') loadClients();
         const handleDocCheck = (e) => {
+            renderDocAutocomplete(e.target.value);
             let val = e.target.value.replace(/\D/g, '');
             if (val.length <= 11) {
                 e.target.value = val.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/g, "$1.$2.$3-$4");
@@ -200,6 +293,7 @@ function setupEventListeners() {
     if (clientNameInput) {
         clientNameInput.oninput = (e) => {
             e.target.value = e.target.value.toUpperCase();
+            renderDocAutocomplete(e.target.value);
             saveDraft();
         };
     }
