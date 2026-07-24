@@ -732,7 +732,8 @@ async def create_entrega(
 ):
     print(f"\n--- [RASTREIO] NOVA REQUISIÇÃO RECEBIDA (JSON) ---")
     cnpj = payload.get('cnpj')
-    nome_cliente = payload.get('nome_cliente', 'Cliente Novo')
+    raw_nome = payload.get('nome_cliente') or 'CLIENTE NOVO'
+    nome_cliente = raw_nome.strip().upper()
     numero_documento = payload.get('numero_documento')
     data_entrega_str = payload.get('data_entrega')
     tipo_entrega = payload.get('tipo_entrega')

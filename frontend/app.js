@@ -196,6 +196,13 @@ function setupEventListeners() {
             }
         };
     }
+    const clientNameInput = document.getElementById('client-name');
+    if (clientNameInput) {
+        clientNameInput.oninput = (e) => {
+            e.target.value = e.target.value.toUpperCase();
+            saveDraft();
+        };
+    }
     document.getElementById('add-item').onclick = () => { addItem(); saveDraft(); };
     document.getElementById('delivery-form').onsubmit = async (e) => {
         e.preventDefault();
@@ -742,9 +749,14 @@ async function submitDelivery(whatsappPhone = null, btn, originalText) {
     btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
     const photoUrls = preUploadedPhotos.map(p => p.url);
 
+    const docLimpo = document.getElementById('client-doc').value.replace(/\D/g, '');
+    if (whatsappPhone && docLimpo) {
+        localStorage.setItem(`phone_${docLimpo}`, whatsappPhone);
+    }
+
     const payload = {
-        cnpj: document.getElementById('client-doc').value.replace(/\D/g, ''),
-        nome_cliente: document.getElementById('client-name').value,
+        cnpj: docLimpo,
+        nome_cliente: (document.getElementById('client-name').value || "").toUpperCase(),
         numero_documento: document.getElementById('doc-number').value,
         data_entrega: new Date().toISOString(),
         tipo_entrega: 'motorista',
@@ -805,7 +817,7 @@ async function submitDelivery(whatsappPhone = null, btn, originalText) {
     } catch (err) { showToast("Erro conexão", "error"); btn.disabled = false; btn.innerHTML = originalText; }
 }
 
-function openWhatsAppCheckoutModal(btn, originalText) {
+async function openWhatsAppCheckoutModal(btn, originalText) {
     const modal = document.getElementById('whatsapp-checkout-modal');
     const phoneInput = document.getElementById('whatsapp-phone-input');
     const cancelBtn = document.getElementById('whatsapp-cancel-btn');
@@ -839,7 +851,21 @@ function openWhatsAppCheckoutModal(btn, originalText) {
         };
     }
 
-    const storedPhone = localStorage.getItem(`phone_${cnpjVal}`) || "";
+    let storedPhone = localStorage.getItem(`phone_${cnpjVal}`) || "";
+
+    // Se não encontrou no localStorage local, busca no servidor pelo CNPJ
+    if (!storedPhone && cnpjVal) {
+        try {
+            const res = await fetch(`/api/cnpj/${cnpjVal}`);
+            if (res.ok) {
+                const clientData = await res.json();
+                if (clientData.telefone) {
+                    storedPhone = clientData.telefone;
+                    localStorage.setItem(`phone_${cnpjVal}`, storedPhone);
+                }
+            }
+        } catch (e) {}
+    }
 
     const formatPhone = (num) => {
         if (!num) return "";
