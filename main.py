@@ -764,21 +764,31 @@ async def create_entrega(
     tipo_entrega = payload.get('tipo_entrega')
     cilindros_data = payload.get('cilindros', [])
     fotos_pre_carregadas = payload.get('fotos_pre_carregadas', [])
-    whatsapp_phone = payload.get('whatsapp_phone')
+    
+    raw_phone = payload.get('whatsapp_phone') or ''
+    whatsapp_phone = ''.join(filter(str.isdigit, str(raw_phone)))
 
     cliente = None
     if cnpj:
         cliente = db.query(Cliente).filter(Cliente.cnpj == cnpj).first()
     if not cliente and nome_cliente:
-        cliente = db.query(Cliente).filter(Cliente.nome_razao == nome_cliente).first()
+        cliente = db.query(Cliente).filter(Cliente.nome_razao.ilike(nome_cliente)).first()
 
     if not cliente:
-        cliente = Cliente(cnpj=cnpj or None, nome_razao=nome_cliente, telefone=whatsapp_phone, lat=payload.get('lat'), lng=payload.get('lng'))
+        cliente = Cliente(
+            cnpj=cnpj or None,
+            nome_razao=nome_cliente,
+            telefone=whatsapp_phone or None,
+            lat=payload.get('lat'),
+            lng=payload.get('lng')
+        )
         db.add(cliente)
         db.commit()
         db.refresh(cliente)
     else:
         cliente.nome_razao = nome_cliente
+        if cnpj and not cliente.cnpj:
+            cliente.cnpj = cnpj
         if whatsapp_phone:
             cliente.telefone = whatsapp_phone
         if payload.get('lat'):
