@@ -662,6 +662,25 @@ def delete_gas(gas_id: int, db: Session = Depends(get_db), current_user: dict = 
 
 
 
+@app.get("/api/busca-cliente")
+async def busca_cliente(term: Optional[str] = None, db: Session = Depends(get_db)):
+    if not term:
+        return {"status": "error", "message": "Termo é obrigatório"}
+    doc_limpo = ''.join(filter(str.isdigit, term))
+    cliente = None
+    if doc_limpo:
+        cliente = db.query(Cliente).filter(Cliente.cnpj == doc_limpo).first()
+    if not cliente and len(term.strip()) >= 2:
+        cliente = db.query(Cliente).filter(Cliente.nome_razao.ilike(f"%{term.strip()}%")).first()
+    if cliente:
+        return {
+            "status": "success",
+            "cnpj": cliente.cnpj,
+            "nome_razao": cliente.nome_razao.upper(),
+            "telefone": cliente.telefone
+        }
+    return {"status": "not_found"}
+
 @app.get("/api/cnpj/{documento}")
 async def focus_cnpj(documento: str, db: Session = Depends(get_db)):
     print(f"[RASTREIO] Buscando CNPJ: {documento}")

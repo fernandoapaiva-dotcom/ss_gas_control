@@ -980,24 +980,37 @@ async function openWhatsAppCheckoutModal(btn, originalText) {
     }
 
     let storedPhone = "";
-    const clientNameVal = document.getElementById('client-name')?.value || "";
-    const queryTerm = cnpjVal || clientNameVal;
-    
+    const docClean = cnpjVal;
+    const clientNameVal = (document.getElementById('client-name')?.value || "").trim();
+
+    // 1. Busca síncrona imediata no localStorage ou na lista de clientes em memória
+    if (docClean && localStorage.getItem(`phone_${docClean}`)) {
+        storedPhone = localStorage.getItem(`phone_${docClean}`);
+    }
+
+    if (!storedPhone && typeof allClients !== 'undefined' && allClients && allClients.length > 0) {
+        const found = allClients.find(c => 
+            (docClean && c.cnpj && c.cnpj.replace(/\D/g, '') === docClean) ||
+            (clientNameVal && c.nome_razao && c.nome_razao.toUpperCase() === clientNameVal.toUpperCase())
+        );
+        if (found && found.telefone) {
+            storedPhone = found.telefone;
+        }
+    }
+
+    // 2. Consulta ao servidor backend via endpoint seguro
+    const queryTerm = docClean || clientNameVal;
     if (queryTerm) {
         try {
-            const res = await fetch(`/api/cnpj/${encodeURIComponent(queryTerm)}`);
+            const res = await fetch(`/api/busca-cliente?term=${encodeURIComponent(queryTerm)}&t=${Date.now()}`);
             if (res.ok) {
                 const clientData = await res.json();
-                if (clientData.telefone) {
+                if (clientData.status === 'success' && clientData.telefone) {
                     storedPhone = clientData.telefone;
-                    if (cnpjVal) localStorage.setItem(`phone_${cnpjVal}`, storedPhone);
+                    if (docClean) localStorage.setItem(`phone_${docClean}`, storedPhone);
                 }
             }
         } catch (e) {}
-    }
-
-    if (!storedPhone && cnpjVal) {
-        storedPhone = localStorage.getItem(`phone_${cnpjVal}`) || "";
     }
 
     const formatPhone = (num) => {
