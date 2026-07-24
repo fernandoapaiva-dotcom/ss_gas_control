@@ -430,17 +430,40 @@
                 <i class="fab fa-whatsapp"></i>
             </div>
             <h3 style="margin-bottom: 0.5rem; color: var(--dark); font-weight: 700;">Enviar Comprovante Automático?</h3>
-            <p style="font-size: 0.85rem; color: #666; margin-bottom: 1.25rem; line-height: 1.4;">
+            
+            <!-- Visão 1: Pergunta de confirmação para número salvo -->
+            <div id="whatsapp-saved-container" style="display: none; background: #e8f5e9; padding: 1rem; border-radius: 10px; border: 1px solid #c8e6c9; margin-bottom: 1.25rem;">
+                <p style="font-size: 0.9rem; color: #2e7d32; font-weight: 600; margin-bottom: 0.4rem;">
+                    Enviar mensagem para o número anterior do cliente?
+                </p>
+                <div id="whatsapp-saved-phone-display" style="font-size: 1.3rem; font-weight: 800; color: #1b5e20; letter-spacing: 0.5px;"></div>
+            </div>
+
+            <!-- Visão 2: Informação geral -->
+            <p id="whatsapp-desc-info" style="font-size: 0.85rem; color: #666; margin-bottom: 1.25rem; line-height: 1.4;">
                 O sistema enviará a confirmação da entrega e anexará todas as fotos tiradas de forma 100% automática para o cliente!
             </p>
             
-            <div class="form-group" style="text-align: left; margin-bottom: 1.5rem;">
+            <!-- Campo de entrada do WhatsApp -->
+            <div id="whatsapp-input-container" class="form-group" style="text-align: left; margin-bottom: 1.5rem;">
                 <label style="font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 6px;">WhatsApp do Cliente</label>
                 <input type="tel" id="whatsapp-phone-input" class="form-control" placeholder="Ex: (24) 98888-7777" style="width: 100%; text-align: center; font-size: 1.1rem; letter-spacing: 0.5px;" value="">
                 <small style="color: #999; font-size: 0.75rem; display: block; margin-top: 4px; text-align: center;">Digite o número com DDD. Apenas números.</small>
             </div>
             
-            <div style="display: flex; gap: 10px;">
+            <!-- Botões de ação quando possui número salvo -->
+            <div id="whatsapp-buttons-saved" style="display: none; flex-direction: column; gap: 8px;">
+                <button type="button" id="whatsapp-confirm-saved-btn" class="btn btn-primary" style="width: 100%; padding: 0.8rem; background: #25D366; border-color: #25D366; font-size: 1rem; font-weight: 700;">
+                    <i class="fab fa-whatsapp"></i> Sim, Enviar para este Número
+                </button>
+                <div style="display: flex; gap: 8px;">
+                    <button type="button" id="whatsapp-cancel-btn-saved" class="btn btn-outline" style="flex: 1; padding: 0.65rem;">Não Enviar</button>
+                    <button type="button" id="whatsapp-change-phone-btn" class="btn btn-outline" style="flex: 1; padding: 0.65rem; color: var(--primary); border-color: var(--primary);">Alterar Número</button>
+                </div>
+            </div>
+
+            <!-- Botões de ação manual -->
+            <div id="whatsapp-buttons-manual" style="display: flex; gap: 10px;">
                 <button type="button" id="whatsapp-cancel-btn" class="btn btn-outline" style="flex: 1; padding: 0.75rem;">Não Enviar</button>
                 <button type="button" id="whatsapp-send-btn" class="btn btn-primary" style="flex: 1; padding: 0.75rem; background: #25D366; border-color: #25D366;">
                     <i class="fab fa-whatsapp"></i> Confirmar e Enviar

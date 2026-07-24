@@ -17,6 +17,7 @@ class Cliente(Base):
     __tablename__ = "clientes"
     cnpj = Column(String(14), primary_key=True, index=True)
     nome_razao = Column(String, nullable=False)
+    telefone = Column(String, nullable=True)
     lat = Column(String, nullable=True)
     lng = Column(String, nullable=True)
     entregas = relationship("Entrega", back_populates="cliente")

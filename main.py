@@ -404,7 +404,7 @@ async def get_current_user_details(db: Session = Depends(get_db), current_user: 
 @app.get("/api/clientes")
 async def list_clientes(db: Session = Depends(get_db)):
     clientes = db.query(Cliente).all()
-    return [{"cnpj": c.cnpj, "nome_razao": c.nome_razao, "lat": c.lat, "lng": c.lng} for c in clientes]
+    return [{"cnpj": c.cnpj, "nome_razao": c.nome_razao, "telefone": c.telefone, "lat": c.lat, "lng": c.lng} for c in clientes]
 
 @app.post("/api/clientes/localizacao")
 async def update_cliente_localizacao(
@@ -665,19 +665,61 @@ def delete_gas(gas_id: int, db: Session = Depends(get_db), current_user: dict = 
 @app.get("/api/cnpj/{documento}")
 async def focus_cnpj(documento: str, db: Session = Depends(get_db)):
     print(f"[RASTREIO] Buscando CNPJ: {documento}")
-    cliente = db.query(Cliente).filter(Cliente.cnpj == documento).first()
+    doc_limpo = ''.join(filter(str.isdigit, documento))
+    cliente = db.query(Cliente).filter(Cliente.cnpj == doc_limpo).first()
     if cliente:
-        return {"cnpj": cliente.cnpj, "nome_razao": cliente.nome_razao, "fonte": "local"}
+        return {"cnpj": cliente.cnpj, "nome_razao": cliente.nome_razao, "telefone": cliente.telefone, "fonte": "local"}
 
-    if len(documento) == 14:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+    if len(doc_limpo) == 14:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json"
+        }
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, headers=headers) as client:
+            # 1. BrasilAPI
             try:
-                response = await client.get(f"https://brasilapi.com.br/api/cnpj/v1/{documento}")
+                response = await client.get(f"https://brasilapi.com.br/api/cnpj/v1/{doc_limpo}")
                 if response.status_code == 200:
                     data = response.json()
-                    return {"cnpj": documento, "nome_razao": data.get("razao_social"), "fonte": "externa"}
+                    razao = data.get("razao_social") or data.get("nome_fantasia")
+                    if razao:
+                        return {"cnpj": doc_limpo, "nome_razao": razao, "telefone": None, "fonte": "externa"}
             except Exception as e:
                 print(f"[RASTREIO] Erro BrasilAPI: {str(e)}")
+
+            # 2. CNPJ.ws
+            try:
+                response = await client.get(f"https://publica.cnpj.ws/cnpj/{doc_limpo}")
+                if response.status_code == 200:
+                    data = response.json()
+                    razao = data.get("razao_social") or (data.get("estabelecimento", {}).get("nome_fantasia"))
+                    if razao:
+                        return {"cnpj": doc_limpo, "nome_razao": razao, "telefone": None, "fonte": "externa"}
+            except Exception as e:
+                print(f"[RASTREIO] Erro CNPJ.ws: {str(e)}")
+
+            # 3. MinhaReceita
+            try:
+                response = await client.get(f"https://minhareceita.org/{doc_limpo}")
+                if response.status_code == 200:
+                    data = response.json()
+                    razao = data.get("razao_social") or data.get("nome_fantasia")
+                    if razao:
+                        return {"cnpj": doc_limpo, "nome_razao": razao, "telefone": None, "fonte": "externa"}
+            except Exception as e:
+                print(f"[RASTREIO] Erro MinhaReceita: {str(e)}")
+
+            # 4. ReceitaWS
+            try:
+                response = await client.get(f"https://receitaws.com.br/v1/cnpj/{doc_limpo}")
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("status") != "ERROR":
+                        razao = data.get("nome") or data.get("fantasia")
+                        if razao:
+                            return {"cnpj": doc_limpo, "nome_razao": razao, "telefone": None, "fonte": "externa"}
+            except Exception as e:
+                print(f"[RASTREIO] Erro ReceitaWS: {str(e)}")
 
     raise HTTPException(status_code=404, detail="Não encontrado")
 
@@ -700,15 +742,17 @@ async def create_entrega(
 
     cliente = db.query(Cliente).filter(Cliente.cnpj == cnpj).first()
     if not cliente:
-        cliente = Cliente(cnpj=cnpj, nome_razao=nome_cliente, lat=payload.get('lat'), lng=payload.get('lng'))
+        cliente = Cliente(cnpj=cnpj, nome_razao=nome_cliente, telefone=whatsapp_phone, lat=payload.get('lat'), lng=payload.get('lng'))
         db.add(cliente)
         db.commit()
         db.refresh(cliente)
     else:
+        if whatsapp_phone:
+            cliente.telefone = whatsapp_phone
         if payload.get('lat'):
             cliente.lat = payload.get('lat')
             cliente.lng = payload.get('lng')
-            db.commit()
+        db.commit()
 
     try:
         data_entrega_parsed = datetime.fromisoformat(data_entrega_str.replace('Z', '+00:00')) if data_entrega_str else datetime.utcnow()

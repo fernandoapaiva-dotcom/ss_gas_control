@@ -152,7 +152,7 @@ function setupEventListeners() {
     const clientDoc = document.getElementById('client-doc');
     const docError = document.getElementById('client-doc-error');
     if (clientDoc) {
-        clientDoc.oninput = (e) => {
+        const handleDocCheck = (e) => {
             let val = e.target.value.replace(/\D/g, '');
             if (val.length <= 11) {
                 e.target.value = val.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/g, "$1.$2.$3-$4");
@@ -184,6 +184,16 @@ function setupEventListeners() {
                 docError.style.display = 'none';
             }
             saveDraft();
+        };
+
+        clientDoc.oninput = handleDocCheck;
+        clientDoc.onchange = handleDocCheck;
+        clientDoc.onblur = handleDocCheck;
+        clientDoc.onkeyup = (e) => {
+            const val = e.target.value.replace(/\D/g, '');
+            if (val.length === 11 || val.length === 14) {
+                handleDocCheck(e);
+            }
         };
     }
     document.getElementById('add-item').onclick = () => { addItem(); saveDraft(); };
@@ -800,6 +810,17 @@ function openWhatsAppCheckoutModal(btn, originalText) {
     const phoneInput = document.getElementById('whatsapp-phone-input');
     const cancelBtn = document.getElementById('whatsapp-cancel-btn');
     const sendBtn = document.getElementById('whatsapp-send-btn');
+    
+    const savedContainer = document.getElementById('whatsapp-saved-container');
+    const savedPhoneDisplay = document.getElementById('whatsapp-saved-phone-display');
+    const descInfo = document.getElementById('whatsapp-desc-info');
+    const inputContainer = document.getElementById('whatsapp-input-container');
+    const buttonsSaved = document.getElementById('whatsapp-buttons-saved');
+    const buttonsManual = document.getElementById('whatsapp-buttons-manual');
+    const confirmSavedBtn = document.getElementById('whatsapp-confirm-saved-btn');
+    const cancelBtnSaved = document.getElementById('whatsapp-cancel-btn-saved');
+    const changePhoneBtn = document.getElementById('whatsapp-change-phone-btn');
+
     const cnpjVal = document.getElementById('client-doc').value.replace(/\D/g, '');
     
     if (!modal) {
@@ -816,31 +837,81 @@ function openWhatsAppCheckoutModal(btn, originalText) {
                 e.target.value = val.substring(0, 11).replace(/^(\d{2})(\d)/g,"($1) $2").replace(/(\d)(\d{4})$/,"$1-$2");
             }
         };
-        
-        const storedPhone = localStorage.getItem(`phone_${cnpjVal}`) || "";
-        phoneInput.value = storedPhone;
-        if (storedPhone) {
-            let val = storedPhone.replace(/\D/g, '');
-            phoneInput.value = val.replace(/^(\d{2})(\d)/g,"($1) $2").replace(/(\d)(\d{4})$/,"$1-$2");
+    }
+
+    const storedPhone = localStorage.getItem(`phone_${cnpjVal}`) || "";
+
+    const formatPhone = (num) => {
+        if (!num) return "";
+        let val = num.replace(/\D/g, '');
+        return val.replace(/^(\d{2})(\d)/g, "($1) $2").replace(/(\d)(\d{4})$/, "$1-$2");
+    };
+
+    const showManualView = (initialVal = "") => {
+        if (savedContainer) savedContainer.style.display = 'none';
+        if (descInfo) descInfo.style.display = 'block';
+        if (inputContainer) inputContainer.style.display = 'block';
+        if (buttonsSaved) buttonsSaved.style.display = 'none';
+        if (buttonsManual) buttonsManual.style.display = 'flex';
+        if (phoneInput) {
+            phoneInput.value = formatPhone(initialVal);
+            phoneInput.focus();
         }
+    };
+
+    if (storedPhone && storedPhone.replace(/\D/g, '').length >= 10) {
+        const formattedSaved = formatPhone(storedPhone);
+        if (savedPhoneDisplay) savedPhoneDisplay.innerText = formattedSaved;
+        if (savedContainer) savedContainer.style.display = 'block';
+        if (descInfo) descInfo.style.display = 'none';
+        if (inputContainer) inputContainer.style.display = 'none';
+        if (buttonsSaved) buttonsSaved.style.display = 'flex';
+        if (buttonsManual) buttonsManual.style.display = 'none';
+
+        if (confirmSavedBtn) {
+            confirmSavedBtn.onclick = () => {
+                const rawPhone = storedPhone.replace(/\D/g, '');
+                modal.style.display = 'none';
+                submitDelivery(rawPhone, btn, originalText);
+            };
+        }
+
+        if (cancelBtnSaved) {
+            cancelBtnSaved.onclick = () => {
+                modal.style.display = 'none';
+                submitDelivery(null, btn, originalText);
+            };
+        }
+
+        if (changePhoneBtn) {
+            changePhoneBtn.onclick = () => {
+                showManualView(storedPhone);
+            };
+        }
+    } else {
+        showManualView("");
     }
     
-    cancelBtn.onclick = () => {
-        modal.style.display = 'none';
-        submitDelivery(null, btn, originalText);
-    };
+    if (cancelBtn) {
+        cancelBtn.onclick = () => {
+            modal.style.display = 'none';
+            submitDelivery(null, btn, originalText);
+        };
+    }
     
-    sendBtn.onclick = () => {
-        const rawPhone = phoneInput.value.replace(/\D/g, '');
-        if (rawPhone.length < 10) {
-            showToast("Digite um número de WhatsApp válido com DDD.", "error");
-            return;
-        }
-        
-        localStorage.setItem(`phone_${cnpjVal}`, rawPhone);
-        modal.style.display = 'none';
-        submitDelivery(rawPhone, btn, originalText);
-    };
+    if (sendBtn) {
+        sendBtn.onclick = () => {
+            const rawPhone = phoneInput.value.replace(/\D/g, '');
+            if (rawPhone.length < 10) {
+                showToast("Digite um número de WhatsApp válido com DDD.", "error");
+                return;
+            }
+            
+            localStorage.setItem(`phone_${cnpjVal}`, rawPhone);
+            modal.style.display = 'none';
+            submitDelivery(rawPhone, btn, originalText);
+        };
+    }
     
     modal.style.display = 'flex';
 }
@@ -1170,7 +1241,16 @@ async function loginGoogleDriveOAuth() {
 async function searchClient(doc) {
     try {
         const res = await fetch(`/api/cnpj/${doc}`);
-        if (res.ok) { const data = await res.json(); document.getElementById('client-name').value = data.nome_razao || ""; saveDraft(); }
+        if (res.ok) { 
+            const data = await res.json(); 
+            if (data.nome_razao) {
+                document.getElementById('client-name').value = data.nome_razao || ""; 
+            }
+            if (data.telefone) {
+                localStorage.setItem(`phone_${doc}`, data.telefone);
+            }
+            saveDraft(); 
+        }
     } catch (err) {}
 }
 
