@@ -159,19 +159,23 @@ function setupEventListeners() {
 
             renderDocAutocomplete(rawInput);
 
-            // Auto-preenchimento instantâneo da Razão Social conforme os dígitos vão sendo digitados
-            if (val.length >= 2 && typeof allClients !== 'undefined' && allClients && allClients.length > 0) {
-                const match = allClients.find(function(c) {
-                    const cleanCnpj = (c.cnpj || '').replace(/\D/g, '');
-                    return cleanCnpj.indexOf(val) === 0 || cleanCnpj.indexOf(val) !== -1;
-                });
+            // Auto-preenchimento da Razão Social apenas se houver correspondência EXATA do CPF/CNPJ
+            const clientName = document.getElementById('client-name');
+            if (clientName) {
+                let match = null;
+                if ((val.length === 11 || val.length === 14) && typeof allClients !== 'undefined' && allClients && allClients.length > 0) {
+                    match = allClients.find(function(c) {
+                        const cleanCnpj = (c.cnpj || '').replace(/\D/g, '');
+                        return cleanCnpj === val;
+                    });
+                }
 
                 if (match) {
-                    const clientName = document.getElementById('client-name');
-                    if (clientName && (!clientName.value || clientName.getAttribute('data-auto') === 'true' || clientName.value !== match.nome_razao.toUpperCase())) {
-                        clientName.value = match.nome_razao.toUpperCase();
-                        clientName.setAttribute('data-auto', 'true');
-                    }
+                    clientName.value = match.nome_razao.toUpperCase();
+                    clientName.setAttribute('data-auto', 'true');
+                } else if (clientName.getAttribute('data-auto') === 'true') {
+                    clientName.value = '';
+                    clientName.removeAttribute('data-auto');
                 }
             }
 
@@ -213,6 +217,7 @@ function setupEventListeners() {
     if (clientNameInput) {
         clientNameInput.oninput = function(e) {
             e.target.value = e.target.value.toUpperCase();
+            e.target.removeAttribute('data-auto');
             renderDocAutocomplete(e.target.value);
             saveDraft();
         };
@@ -298,6 +303,7 @@ async function renderDocAutocomplete(term) {
             
             if (clientName) {
                 clientName.value = nome.toUpperCase();
+                clientName.removeAttribute('data-auto');
             }
             
             if (phone) {
@@ -1424,7 +1430,11 @@ async function searchClient(doc) {
         if (res.ok) { 
             const data = await res.json(); 
             if (data.nome_razao) {
-                document.getElementById('client-name').value = data.nome_razao || ""; 
+                const clientNameEl = document.getElementById('client-name');
+                if (clientNameEl) {
+                    clientNameEl.value = (data.nome_razao || "").toUpperCase();
+                    clientNameEl.setAttribute('data-auto', 'true');
+                }
             }
             if (data.telefone) {
                 localStorage.setItem(`phone_${doc}`, data.telefone);
