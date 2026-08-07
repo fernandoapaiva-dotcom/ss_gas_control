@@ -1,9 +1,9 @@
-const CACHE_NAME = 'ss-gas-v7';
+const CACHE_NAME = 'ss-gas-v8';
 const ASSETS = [
   '/',
-  '/index.html?v=7',
-  '/style.css?v=7',
-  '/app.js?v=7',
+  '/index.html?v=8',
+  '/style.css?v=8',
+  '/app.js?v=8',
   '/assets/logo/SERVSOLDAPNG.png'
 ];
 
@@ -30,6 +30,10 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
+  if (e.request.url.includes('/api/')) {
+    e.respondWith(fetch(e.request));
+    return;
+  }
   e.respondWith(
     caches.match(e.request, { ignoreSearch: true }).then((res) => res || fetch(e.request))
   );
