@@ -1652,7 +1652,11 @@ function addEditItemRow(item = {}) {
     const marcasOptions = (JSON.parse(localStorage.getItem('gas_marcas') || '["White Martins", "IBG", "Air Liquide", "Messer"]'))
         .map(m => `<option value="${m}" ${item.marca === m ? 'selected' : ''}>${m}</option>`).join('');
 
-    const gasesOptions = (cachedGasesList || ['Oxigênio', 'Acetileno', 'Argônio', 'Nitrogênio', 'Mistura', 'CO2'])
+    const availableGases = (typeof gasesList !== 'undefined' && gasesList.length > 0) 
+        ? gasesList 
+        : (JSON.parse(localStorage.getItem('gases_list') || '[]').length > 0 ? JSON.parse(localStorage.getItem('gases_list')) : ['Oxigênio', 'Acetileno', 'Argônio', 'Nitrogênio', 'Mistura', 'CO2']);
+
+    const gasesOptions = availableGases
         .map(g => {
             const gName = typeof g === 'string' ? g : (g.nome || g);
             return `<option value="${gName}" ${item.gas === gName ? 'selected' : ''}>${gName}</option>`;
