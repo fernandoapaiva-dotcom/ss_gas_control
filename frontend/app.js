@@ -1461,6 +1461,8 @@ async function deleteDelivery(id) {
     } catch (e) { showToast("Erro de conexão", "error"); }
 }
 
+let currentHistoryData = [];
+
 async function loadHistory() {
     const resDiv = document.getElementById('history-results');
     if (!resDiv) return;
@@ -1476,6 +1478,7 @@ async function loadHistory() {
         
         const data = await res.json();
         if (!Array.isArray(data)) throw new Error("Formato de dados inválido");
+        currentHistoryData = data;
 
         resDiv.innerHTML = data.map(item => `
             <div class="history-item" onclick="toggleDetails(${item.id})" style="cursor:pointer; margin-bottom:12px; border-left:4px solid var(--primary); padding:12px; background:white; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
@@ -1569,15 +1572,23 @@ let currentEditingPhotos = [];
 
 async function openEditDeliveryModal(id) {
     try {
-        const start = (document.getElementById('filter-start') ? document.getElementById('filter-start').value : '') || "";
-        const end = (document.getElementById('filter-end') ? document.getElementById('filter-end').value : '') || "";
-        const search = (document.getElementById('filter-search') ? document.getElementById('filter-search').value : '') || "";
+        let item = (currentHistoryData || []).find(d => d.id === id);
         
-        const res = await fetch(`/api/entregas/filtro?start_date=${start}&end_date=${end}&search=${encodeURIComponent(search)}`);
-        if (!res.ok) throw new Error("Erro ao buscar entregas.");
-        const data = await res.json();
+        if (!item) {
+            const start = (document.getElementById('filter-start') ? document.getElementById('filter-start').value : '') || "";
+            const end = (document.getElementById('filter-end') ? document.getElementById('filter-end').value : '') || "";
+            const search = (document.getElementById('filter-search') ? document.getElementById('filter-search').value : '') || "";
+            
+            const res = await fetch(`/api/entregas/filtro?start_date=${start}&end_date=${end}&search=${encodeURIComponent(search)}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    currentHistoryData = data;
+                    item = data.find(d => d.id === id);
+                }
+            }
+        }
         
-        const item = data.find(d => d.id === id);
         if (!item) {
             showToast("Entrega não encontrada.", "error");
             return;
@@ -1605,7 +1616,7 @@ async function openEditDeliveryModal(id) {
         document.getElementById('edit-delivery-modal').style.display = 'flex';
     } catch (e) {
         console.error("Erro ao abrir modal de edição:", e);
-        showToast("Erro ao carregar dados para edição.", "error");
+        showToast("Erro ao carregar dados para edição: " + e.message, "error");
     }
 }
 
