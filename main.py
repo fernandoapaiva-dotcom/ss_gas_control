@@ -980,6 +980,67 @@ async def deletar_entrega(id: int, db: Session = Depends(get_db), current_user: 
     db.commit()
     return {"status": "deleted"}
 
+@app.put("/api/entregas/{id}")
+async def update_entrega(
+    id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user.get("nivel_acesso") != "adm":
+        raise HTTPException(status_code=403, detail="Acesso negado. Apenas administradores podem editar registros do histórico.")
+    
+    entrega = db.query(Entrega).filter(Entrega.id == id).first()
+    if not entrega:
+        raise HTTPException(status_code=404, detail="Entrega não encontrada")
+
+    raw_nome = payload.get('nome_cliente') or entrega.nome_cliente or 'CLIENTE DESCONHECIDO'
+    nome_cliente = raw_nome.strip().upper()
+    numero_documento = payload.get('numero_documento', entrega.numero_documento)
+    data_entrega_str = payload.get('data_entrega')
+    cilindros_data = payload.get('cilindros', [])
+    fotos = payload.get('fotos', [])
+
+    entrega.nome_cliente = nome_cliente
+    entrega.numero_documento = numero_documento
+
+    if data_entrega_str:
+        try:
+            entrega.data_entrega = datetime.fromisoformat(data_entrega_str.replace('Z', '+00:00'))
+        except:
+            pass
+
+    if isinstance(fotos, list):
+        entrega.fotos_urls = ",".join([f for f in fotos if f])
+    elif isinstance(fotos, str):
+        entrega.fotos_urls = fotos
+
+    # Atualiza cliente se existir
+    if entrega.fk_cliente:
+        cliente = db.query(Cliente).filter(Cliente.cnpj == entrega.fk_cliente).first()
+        if cliente:
+            cliente.nome_razao = nome_cliente
+
+    # Remove cilindros antigos e adiciona novos
+    db.query(CilindroAplicado).filter(CilindroAplicado.fk_entrega == id).delete()
+    
+    for cil in cilindros_data:
+        cilindro = CilindroAplicado(
+            fk_entrega=entrega.id,
+            tipo_gas=cil.get('tipo_gas') or cil.get('gas') or 'GÁS',
+            tamanho_gas=cil.get('tamanho_gas') or cil.get('tam') or 'Padrão',
+            quantidade=int(cil.get('quantidade') or cil.get('qtd') or 1),
+            data_validade=cil.get('data_validade') or cil.get('validade') or "-",
+            observacao=cil.get('observacao') or cil.get('obs'),
+            marca=cil.get('marca')
+        )
+        db.add(cilindro)
+
+    db.commit()
+    db.refresh(entrega)
+    return {"status": "success", "id": entrega.id}
+
+
 @app.post("/api/entregas/{id}/reenviar-whatsapp")
 async def reenviar_whatsapp(
     id: int, 

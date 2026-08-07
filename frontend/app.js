@@ -1490,6 +1490,9 @@ async function loadHistory() {
                     </div>
                     <div style="display:flex; align-items:center; gap:12px;">
                         ${currentUser && (currentUser.nivel_acesso === 'adm' || (currentUser.email && (currentUser.email.toLowerCase().includes('admin') || currentUser.email.toLowerCase() === 'comercial@servweld.com.br'))) ? `
+                            <button type="button" onclick="event.stopPropagation(); openEditDeliveryModal(${item.id})" style="color:var(--primary, #1565C0); border:none; background:none; font-size:1.15rem; cursor:pointer; display:inline-flex;" title="Editar entrega">
+                                <i class="fas fa-edit"></i>
+                            </button>
                             <button type="button" onclick="event.stopPropagation(); deleteDelivery(${item.id})" style="color:var(--danger, #f44336); border:none; background:none; font-size:1.15rem; cursor:pointer; display:inline-flex;" title="Excluir entrega">
                                 <i class="fas fa-trash-alt"></i>
                             </button>
@@ -1559,6 +1562,292 @@ function toggleDetails(id) {
         if (icon) icon.classList.replace('fa-chevron-up', 'fa-chevron-down');
     }
 }
+
+// --- EDIÇÃO DE HISTÓRICO (ADMINISTRADOR) ---
+let currentEditingDelivery = null;
+let currentEditingPhotos = [];
+
+async function openEditDeliveryModal(id) {
+    try {
+        const start = (document.getElementById('filter-start') ? document.getElementById('filter-start').value : '') || "";
+        const end = (document.getElementById('filter-end') ? document.getElementById('filter-end').value : '') || "";
+        const search = (document.getElementById('filter-search') ? document.getElementById('filter-search').value : '') || "";
+        
+        const res = await fetch(`/api/entregas/filtro?start_date=${start}&end_date=${end}&search=${encodeURIComponent(search)}`);
+        if (!res.ok) throw new Error("Erro ao buscar entregas.");
+        const data = await res.json();
+        
+        const item = data.find(d => d.id === id);
+        if (!item) {
+            showToast("Entrega não encontrada.", "error");
+            return;
+        }
+        
+        currentEditingDelivery = item;
+        currentEditingPhotos = [...(item.fotos || [])];
+
+        document.getElementById('edit-delivery-id').value = item.id;
+        document.getElementById('edit-client-name').value = item.cliente || '';
+        document.getElementById('edit-doc-number').value = item.nf || '';
+        
+        if (item.data) {
+            const dt = new Date(item.data);
+            const tzOffset = dt.getTimezoneOffset() * 60000;
+            const localISOTime = (new Date(dt.getTime() - tzOffset)).toISOString().slice(0, 16);
+            document.getElementById('edit-delivery-date').value = localISOTime;
+        } else {
+            document.getElementById('edit-delivery-date').value = '';
+        }
+
+        renderEditItems(item.itens || []);
+        renderEditPhotos();
+
+        document.getElementById('edit-delivery-modal').style.display = 'flex';
+    } catch (e) {
+        console.error("Erro ao abrir modal de edição:", e);
+        showToast("Erro ao carregar dados para edição.", "error");
+    }
+}
+
+function closeEditDeliveryModal() {
+    document.getElementById('edit-delivery-modal').style.display = 'none';
+    currentEditingDelivery = null;
+    currentEditingPhotos = [];
+}
+
+function renderEditItems(itens) {
+    const container = document.getElementById('edit-items-container');
+    if (!container) return;
+    container.innerHTML = '';
+    
+    if (!itens || itens.length === 0) {
+        addEditItemRow();
+        return;
+    }
+    
+    itens.forEach(i => addEditItemRow(i));
+}
+
+function addEditItemRow(item = {}) {
+    const container = document.getElementById('edit-items-container');
+    if (!container) return;
+    
+    const rowId = 'edit-item-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4);
+    const row = document.createElement('div');
+    row.id = rowId;
+    row.className = 'edit-item-row';
+    row.style.cssText = 'background: #f9f9f9; padding: 12px; border-radius: 8px; border: 1px solid #eee; margin-bottom: 10px; position: relative;';
+    
+    const marcasOptions = (JSON.parse(localStorage.getItem('gas_marcas') || '["White Martins", "IBG", "Air Liquide", "Messer"]'))
+        .map(m => `<option value="${m}" ${item.marca === m ? 'selected' : ''}>${m}</option>`).join('');
+
+    const gasesOptions = (cachedGasesList || ['Oxigênio', 'Acetileno', 'Argônio', 'Nitrogênio', 'Mistura', 'CO2'])
+        .map(g => {
+            const gName = typeof g === 'string' ? g : (g.nome || g);
+            return `<option value="${gName}" ${item.gas === gName ? 'selected' : ''}>${gName}</option>`;
+        }).join('');
+
+    row.innerHTML = `
+        <button type="button" onclick="removeEditItemRow('${rowId}')" style="position: absolute; top: 8px; right: 8px; background: none; border: none; color: #f44336; cursor: pointer; font-size: 0.9rem;" title="Remover item">
+            <i class="fas fa-trash-alt"></i>
+        </button>
+        <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+            <div>
+                <label style="font-size: 0.75rem; color: #666; font-weight: 600;">Tipo de Gás</label>
+                <select class="form-control edit-gas-type" style="padding: 4px 8px; font-size: 0.85rem;">
+                    ${gasesOptions}
+                </select>
+            </div>
+            <div>
+                <label style="font-size: 0.75rem; color: #666; font-weight: 600;">Tamanho</label>
+                <input type="text" class="form-control edit-gas-tam" value="${item.tam || 'Padrão'}" placeholder="ex: 10m³" style="padding: 4px 8px; font-size: 0.85rem;">
+            </div>
+            <div>
+                <label style="font-size: 0.75rem; color: #666; font-weight: 600;">Qtd</label>
+                <input type="number" class="form-control edit-gas-qtd" value="${item.qtd || 1}" min="1" style="padding: 4px 8px; font-size: 0.85rem;">
+            </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+            <div>
+                <label style="font-size: 0.75rem; color: #666; font-weight: 600;">Marca</label>
+                <select class="form-control edit-gas-marca" style="padding: 4px 8px; font-size: 0.85rem;">
+                    <option value="">(Sem Marca)</option>
+                    ${marcasOptions}
+                </select>
+            </div>
+            <div>
+                <label style="font-size: 0.75rem; color: #666; font-weight: 600;">Validade</label>
+                <input type="text" class="form-control edit-gas-validade" value="${item.validade || ''}" placeholder="MM/AAAA ou AAAA-MM" style="padding: 4px 8px; font-size: 0.85rem;">
+            </div>
+        </div>
+        <div>
+            <label style="font-size: 0.75rem; color: #666; font-weight: 600;">Observação</label>
+            <input type="text" class="form-control edit-gas-obs" value="${item.obs || ''}" placeholder="Observação do cilindro..." style="padding: 4px 8px; font-size: 0.85rem;">
+        </div>
+    `;
+    container.appendChild(row);
+}
+
+function removeEditItemRow(rowId) {
+    const row = document.getElementById(rowId);
+    if (row) row.remove();
+}
+
+function renderEditPhotos() {
+    const container = document.getElementById('edit-photos-container');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!currentEditingPhotos || currentEditingPhotos.length === 0) {
+        container.innerHTML = '<span style="font-size:0.8rem; color:#999;">Nenhuma foto anexada.</span>';
+        return;
+    }
+
+    currentEditingPhotos.forEach((link, idx) => {
+        const itemDiv = document.createElement('div');
+        itemDiv.style.cssText = 'display: inline-flex; align-items: center; gap: 6px; background: #eef2f7; padding: 6px 10px; border-radius: 6px; border: 1px solid #d0d7de; font-size: 0.8rem;';
+        itemDiv.innerHTML = `
+            <i class="fas fa-image" style="color:var(--primary);"></i>
+            <span>Foto ${idx + 1}</span>
+            <button type="button" onclick="openImageViewer('${link}', ${idx}, ${JSON.stringify(currentEditingPhotos).replace(/"/g, '&quot;')})" style="background:none; border:none; color:#1565C0; cursor:pointer; font-size:0.85rem;" title="Visualizar">
+                <i class="fas fa-eye"></i>
+            </button>
+            <button type="button" onclick="removeEditPhoto(${idx})" style="background:none; border:none; color:#f44336; cursor:pointer; font-size:0.85rem;" title="Remover foto">
+                <i class="fas fa-times"></i>
+            </button>
+        `;
+        container.appendChild(itemDiv);
+    });
+}
+
+function removeEditPhoto(index) {
+    currentEditingPhotos.splice(index, 1);
+    renderEditPhotos();
+}
+
+async function handleEditPhotoUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const statusEl = document.getElementById('edit-photo-upload-status');
+    if (statusEl) statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
+
+    const clientName = document.getElementById('edit-client-name').value || 'Temp';
+    const invoiceNum = document.getElementById('edit-doc-number').value || 'Temp';
+
+    const formData = new FormData();
+    formData.append('foto', file);
+    formData.append('client_name', clientName);
+    formData.append('invoice_number', invoiceNum);
+
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch('/api/upload-temp-photo', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}`
+            },
+            body: formData
+        });
+
+        if (!res.ok) throw new Error("Erro ao fazer upload da imagem");
+
+        const data = await res.json();
+        if (data.drive_url) {
+            currentEditingPhotos.push(data.drive_url);
+            renderEditPhotos();
+            if (statusEl) statusEl.innerHTML = '<span style="color:#2e7d32;"><i class="fas fa-check"></i> Enviada!</span>';
+            setTimeout(() => { if (statusEl) statusEl.innerHTML = ''; }, 3000);
+        } else {
+            throw new Error("URL não retornada pelo servidor");
+        }
+    } catch (e) {
+        console.error("Erro upload foto edição:", e);
+        showToast("Erro ao subir nova foto: " + e.message, "error");
+        if (statusEl) statusEl.innerHTML = '<span style="color:#f44336;"><i class="fas fa-exclamation-triangle"></i> Erro</span>';
+    } finally {
+        event.target.value = '';
+    }
+}
+
+async function submitDeliveryEdit(event) {
+    event.preventDefault();
+    const id = document.getElementById('edit-delivery-id').value;
+    if (!id) return;
+
+    const clientName = document.getElementById('edit-client-name').value.trim().toUpperCase();
+    const docNumber = document.getElementById('edit-doc-number').value.trim();
+    const deliveryDate = document.getElementById('edit-delivery-date').value;
+
+    const rowEls = document.querySelectorAll('.edit-item-row');
+    const cilindros = [];
+    rowEls.forEach(row => {
+        const gas = row.querySelector('.edit-gas-type').value;
+        const tam = row.querySelector('.edit-gas-tam').value || 'Padrão';
+        const qtd = parseInt(row.querySelector('.edit-gas-qtd').value || 1);
+        const marca = row.querySelector('.edit-gas-marca').value || null;
+        const validade = row.querySelector('.edit-gas-validade').value.trim() || '-';
+        const obs = row.querySelector('.edit-gas-obs').value.trim() || null;
+
+        cilindros.push({
+            tipo_gas: gas,
+            tamanho_gas: tam,
+            quantidade: qtd,
+            marca: marca,
+            data_validade: validade,
+            observacao: obs
+        });
+    });
+
+    if (cilindros.length === 0) {
+        showToast("Adicione pelo menos um item à entrega.", "warning");
+        return;
+    }
+
+    const payload = {
+        nome_cliente: clientName,
+        numero_documento: docNumber,
+        data_entrega: deliveryDate ? new Date(deliveryDate).toISOString() : null,
+        cilindros: cilindros,
+        fotos: currentEditingPhotos
+    };
+
+    const saveBtn = document.getElementById('save-edit-delivery-btn');
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
+    }
+
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch(`/api/entregas/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}`
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.detail || "Erro ao salvar alterações");
+        }
+
+        showToast("Entrega atualizada com sucesso!");
+        closeEditDeliveryModal();
+        loadHistory();
+    } catch (e) {
+        console.error("Erro ao salvar edição de entrega:", e);
+        showToast("Erro ao salvar: " + e.message, "error");
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="fas fa-save"></i> Salvar Alterações';
+        }
+    }
+}
+
 
 async function loadClients() {
     try {
