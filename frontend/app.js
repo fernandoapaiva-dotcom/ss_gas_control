@@ -1835,8 +1835,8 @@ async function submitDeliveryEdit(event) {
 
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
-        const res = await fetch(`/api/entregas/${id}`, {
-            method: 'PUT',
+        const res = await fetch(`/api/entregas/${id}/atualizar`, {
+            method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}`

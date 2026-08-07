@@ -981,6 +981,7 @@ async def deletar_entrega(id: int, db: Session = Depends(get_db), current_user: 
     return {"status": "deleted"}
 
 @app.put("/api/entregas/{id}")
+@app.post("/api/entregas/{id}/atualizar")
 async def update_entrega(
     id: int,
     payload: dict,
