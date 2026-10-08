@@ -468,6 +468,82 @@ async def update_cliente_localizacao(
     db.commit()
     return {"status": "success", "lat": lat, "lng": lng}
 
+@app.get("/api/clientes/{cnpj}/localizacoes")
+async def get_cliente_localizacoes(cnpj: str, db: Session = Depends(get_db)):
+    doc_limpo = ''.join(filter(str.isdigit, cnpj))
+    cliente = None
+    if doc_limpo:
+        cliente = db.query(Cliente).filter(Cliente.cnpj == doc_limpo).first()
+    if not cliente:
+        cliente = db.query(Cliente).filter(Cliente.nome_razao.ilike(f"%{cnpj.strip()}%")).first()
+
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+
+    # Busca todas as entregas do cliente pelo CNPJ ou pelo nome
+    entregas_query = db.query(Entrega).filter(
+        (Entrega.fk_cliente == cliente.cnpj) |
+        (Entrega.nome_cliente.ilike(cliente.nome_razao))
+    )
+    entregas = entregas_query.order_by(Entrega.data_entrega.desc()).all()
+
+    localizacoes = []
+    for e in entregas:
+        if e.lat and e.lng:
+            try:
+                lat_f = float(str(e.lat).strip())
+                lng_f = float(str(e.lng).strip())
+            except (ValueError, TypeError):
+                continue
+
+            operador_db = db.query(Usuario).filter(Usuario.id == e.fk_motorista).first() if e.fk_motorista else None
+            nome_operador = operador_db.nome if operador_db else "Motorista"
+
+            itens = [
+                {
+                    "gas": c.tipo_gas,
+                    "tam": c.tamanho_gas,
+                    "qtd": c.quantidade,
+                    "marca": c.marca,
+                    "obs": c.observacao
+                }
+                for c in e.cilindros
+            ]
+
+            localizacoes.append({
+                "entrega_id": e.id,
+                "data_entrega": e.data_entrega.strftime("%d/%m/%Y %H:%M") if e.data_entrega else None,
+                "data_iso": e.data_entrega.isoformat() if e.data_entrega else None,
+                "numero_documento": e.numero_documento or "S/N",
+                "operador": nome_operador,
+                "lat": lat_f,
+                "lng": lng_f,
+                "itens": itens,
+                "fotos": [f for f in (e.fotos_urls.split(",") if e.fotos_urls else []) if f.strip()]
+            })
+
+    cliente_lat = None
+    cliente_lng = None
+    if cliente.lat and cliente.lng:
+        try:
+            cliente_lat = float(str(cliente.lat).strip())
+            cliente_lng = float(str(cliente.lng).strip())
+        except:
+            pass
+
+    return {
+        "status": "success",
+        "cliente": {
+            "cnpj": cliente.cnpj,
+            "nome_razao": cliente.nome_razao.upper(),
+            "telefone": cliente.telefone,
+            "lat": cliente_lat,
+            "lng": cliente_lng
+        },
+        "total_entregas_com_gps": len(localizacoes),
+        "localizacoes": localizacoes
+    }
+
 # --- USER CRUD (ADMIN ONLY) ---
 
 @app.get("/api/admin/usuarios")

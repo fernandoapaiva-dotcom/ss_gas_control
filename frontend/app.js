@@ -1907,7 +1907,12 @@ function renderClientsList(clients) {
         <div class="list-item" style="padding: 16px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); border-top: 4px solid var(--primary); display: flex; flex-direction: column; justify-content: space-between; min-height: 220px; transition: transform 0.2s, box-shadow 0.2s; position: relative; margin-bottom: 0;">
             <div>
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
-                    <h4 style="margin: 0 0 6px 0; font-size: 0.95rem; color: var(--dark); line-height: 1.3; font-weight: 700; word-break: break-word; flex: 1; text-transform: uppercase;">${(c.nome_razao || "SEM NOME").toUpperCase()}</h4>
+                    <h4 onclick="openClientAllLocations('${c.cnpj || ""}', '${(c.nome_razao || "").replace(/'/g, "\\'")}')" 
+                        style="margin: 0 0 6px 0; font-size: 0.95rem; color: var(--primary); line-height: 1.3; font-weight: 700; word-break: break-word; flex: 1; text-transform: uppercase; cursor: pointer; display: flex; align-items: center; gap: 6px; text-decoration: underline; text-decoration-color: rgba(21,101,192,0.3);" 
+                        title="Clique para ver todas as localizações de entrega deste cliente">
+                        <i class="fas fa-map-marked-alt" style="font-size: 0.95rem; color: var(--primary); flex-shrink: 0;"></i>
+                        <span>${(c.nome_razao || "SEM NOME").toUpperCase()}</span>
+                    </h4>
                     ${isAdmin ? `
                         <div style="display: flex; gap: 4px;">
                             ${hasLocation ? `
@@ -1921,9 +1926,12 @@ function renderClientsList(clients) {
                         </div>
                     ` : ''}
                 </div>
-                <p style="font-size: 0.8rem; color: #777; margin: 0 0 12px 0; display: flex; align-items: center; gap: 5px;">
+                <p style="font-size: 0.8rem; color: #777; margin: 0 0 10px 0; display: flex; align-items: center; gap: 5px;">
                     <i class="fas fa-id-card" style="color: #bbb;"></i> ${c.cnpj || "Sem CNPJ"}
                 </p>
+                <button type="button" onclick="openClientAllLocations('${c.cnpj || ""}', '${(c.nome_razao || "").replace(/'/g, "\\'")}')" class="btn btn-outline" style="font-size: 0.72rem; padding: 5px 10px; width: 100%; border-color: #bbdefb; color: #1565C0; background: #f0f7ff; border-radius: 8px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 10px;" title="Ver todas as entregas e locais de gás deste cliente">
+                    <i class="fas fa-layer-group"></i> Ver Todos os Endereços de Entrega
+                </button>
             </div>
             
             <div style="margin-top: auto;">
@@ -1951,10 +1959,10 @@ function renderClientsList(clients) {
                 ` : `
                     <div style="display: flex; flex-direction: column; gap: 8px;">
                         <p style="font-size: 0.75rem; color: #999; margin: 4px 0; font-style: italic; display: flex; align-items: center; gap: 5px;">
-                            <i class="fas fa-map-marker-alt" style="color: var(--danger);"></i> Sem localização registrada
+                            <i class="fas fa-map-marker-alt" style="color: var(--danger);"></i> Sem endereço principal cadastrado
                         </p>
                         <button type="button" onclick="registerClientLocation('${c.cnpj}')" class="btn btn-outline" style="font-size: 0.75rem; padding: 8px 12px; width: 100%; border-color: var(--primary); color: var(--primary); display: flex; align-items: center; justify-content: center; gap: 6px; background: #fff; border-radius: 8px; font-weight: 600;">
-                            <i class="fas fa-map-pin"></i> Registrar Localização
+                            <i class="fas fa-map-pin"></i> Registrar Localização Principal
                         </button>
                     </div>
                 `}
@@ -2394,6 +2402,279 @@ async function deleteClientLocation(cnpj) {
         }
     } catch (err) {
         showToast("Erro de conexão.", "error");
+    }
+}
+
+// --- TODAS AS LOCALIZAÇÕES DE ENTREGA DO CLIENTE ---
+let clientLocationsMap = null;
+let clientLocationsMarkers = [];
+
+async function openClientAllLocations(cnpj, clientName) {
+    const modal = document.getElementById('client-locations-modal');
+    const title = document.getElementById('client-locations-title');
+    const subtitle = document.getElementById('client-locations-subtitle');
+    const countBadge = document.getElementById('client-locations-count-badge');
+    const listContainer = document.getElementById('client-locations-list');
+    const mapLoading = document.getElementById('client-locations-map-loading');
+    
+    if (!modal) return;
+    
+    modal.style.display = 'flex';
+    if (title) title.innerHTML = `<i class="fas fa-map-marked-alt"></i> ${(clientName || 'Cliente').toUpperCase()}`;
+    if (subtitle) subtitle.innerText = `Consultando histórico de entregas com GPS...`;
+    if (mapLoading) mapLoading.style.display = 'flex';
+    if (listContainer) listContainer.innerHTML = '<p style="text-align: center; color: #888; padding: 1.5rem;"><i class="fas fa-spinner fa-spin"></i> Carregando localizações de entrega de gás...</p>';
+    
+    // Destrói mapa anterior se existir para evitar bug cinza do Leaflet
+    if (clientLocationsMap) {
+        clientLocationsMap.remove();
+        clientLocationsMap = null;
+        clientLocationsMarkers = [];
+    }
+
+    try {
+        const queryIdentifier = cnpj || clientName;
+        const res = await fetch(`/api/clientes/${encodeURIComponent(queryIdentifier)}/localizacoes?t=${Date.now()}`);
+        if (!res.ok) throw new Error("Erro ao buscar localizações");
+        
+        const data = await res.json();
+        const clientInfo = data.cliente || {};
+        const localizacoes = data.localizacoes || [];
+        
+        if (subtitle) {
+            subtitle.innerText = `${clientInfo.nome_razao || clientName} | CNPJ: ${clientInfo.cnpj || 'S/N'}${clientInfo.telefone ? ' | Tel: ' + clientInfo.telefone : ''}`;
+        }
+        if (countBadge) {
+            countBadge.innerText = `${localizacoes.length} entrega(s) com GPS`;
+        }
+
+        const mapContainer = document.getElementById('client-locations-map');
+        if (mapContainer) {
+            let defaultLat = -15.7975; // Brasília / Padrão Brasil
+            let defaultLng = -47.8919;
+            let defaultZoom = 12;
+
+            if (clientInfo.lat && clientInfo.lng) {
+                defaultLat = clientInfo.lat;
+                defaultLng = clientInfo.lng;
+            } else if (localizacoes.length > 0) {
+                defaultLat = localizacoes[0].lat;
+                defaultLng = localizacoes[0].lng;
+            }
+
+            clientLocationsMap = L.map(mapContainer, { zoomControl: true }).setView([defaultLat, defaultLng], defaultZoom);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap'
+            }).addTo(clientLocationsMap);
+
+            const allLatLngs = [];
+
+            // 1. Marcador da Localização Principal se houver
+            if (clientInfo.lat && clientInfo.lng) {
+                const mainPinIcon = L.divIcon({
+                    className: 'custom-main-pin',
+                    html: `<div style="
+                        background-color: #28a745;
+                        width: 28px;
+                        height: 28px;
+                        border-radius: 50% 50% 50% 0;
+                        position: absolute;
+                        transform: rotate(-45deg);
+                        left: -14px;
+                        top: -28px;
+                        border: 3px solid white;
+                        box-shadow: 0 3px 8px rgba(0,0,0,0.35);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    "><i class="fas fa-star" style="transform: rotate(45deg); color: white; font-size: 11px;"></i></div>`,
+                    iconSize: [28, 28],
+                    iconAnchor: [14, 28]
+                });
+
+                const mainMarker = L.marker([clientInfo.lat, clientInfo.lng], { icon: mainPinIcon }).addTo(clientLocationsMap);
+                mainMarker.bindPopup(`
+                    <div style="min-width: 200px; padding: 4px;">
+                        <h4 style="margin: 0 0 4px 0; color: #28a745; font-size: 0.9rem;"><i class="fas fa-star"></i> Endereço Principal</h4>
+                        <p style="margin: 0 0 8px 0; font-size: 0.78rem; color: #666;">Localização oficial cadastrada do cliente.</p>
+                        <div style="display: flex; gap: 6px;">
+                            <a href="https://www.google.com/maps/dir/?api=1&destination=${clientInfo.lat},${clientInfo.lng}" target="_blank" class="btn btn-primary" style="font-size: 0.72rem; padding: 4px 8px; flex: 1; text-align: center; text-decoration: none;">
+                                <i class="fas fa-route"></i> Maps
+                            </a>
+                            <a href="https://waze.com/ul?ll=${clientInfo.lat},${clientInfo.lng}&navigate=yes" target="_blank" class="btn btn-outline" style="font-size: 0.72rem; padding: 4px 8px; flex: 1; text-align: center; text-decoration: none;">
+                                <i class="fab fa-waze"></i> Waze
+                            </a>
+                        </div>
+                    </div>
+                `);
+                allLatLngs.push([clientInfo.lat, clientInfo.lng]);
+            }
+
+            // 2. Marcadores das entregas realizadas com GPS
+            localizacoes.forEach((loc, index) => {
+                const deliveryIcon = L.divIcon({
+                    className: 'custom-delivery-pin',
+                    html: `<div style="
+                        background-color: #007bff;
+                        width: 26px;
+                        height: 26px;
+                        border-radius: 50% 50% 50% 0;
+                        position: absolute;
+                        transform: rotate(-45deg);
+                        left: -13px;
+                        top: -26px;
+                        border: 2px solid white;
+                        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    "><span style="transform: rotate(45deg); color: white; font-weight: bold; font-size: 10px;">${index + 1}</span></div>`,
+                    iconSize: [26, 26],
+                    iconAnchor: [13, 26]
+                });
+
+                const deliveryMarker = L.marker([loc.lat, loc.lng], { icon: deliveryIcon }).addTo(clientLocationsMap);
+                const gasDetails = (loc.itens || []).map(i => `${i.qtd}x ${i.gas} ${i.tam}`).join(", ") || "Cilindros de Gás";
+
+                deliveryMarker.bindPopup(`
+                    <div style="min-width: 220px; padding: 4px;">
+                        <h4 style="margin: 0 0 4px 0; color: #007bff; font-size: 0.88rem;"><i class="fas fa-truck"></i> Entrega #${index + 1}</h4>
+                        <p style="margin: 0 0 2px 0; font-size: 0.75rem; color: #555;"><b>Data:</b> ${loc.data_entrega || 'N/D'}</p>
+                        <p style="margin: 0 0 2px 0; font-size: 0.75rem; color: #555;"><b>NF / Doc:</b> ${loc.numero_documento}</p>
+                        <p style="margin: 0 0 6px 0; font-size: 0.75rem; color: #555;"><b>Itens:</b> ${gasDetails}</p>
+                        <div style="display: flex; gap: 4px; margin-bottom: 6px;">
+                            <a href="https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}" target="_blank" class="btn btn-primary" style="font-size: 0.7rem; padding: 4px 6px; flex: 1; text-align: center; text-decoration: none;">
+                                <i class="fas fa-route"></i> Maps
+                            </a>
+                            <a href="https://waze.com/ul?ll=${loc.lat},${loc.lng}&navigate=yes" target="_blank" class="btn btn-outline" style="font-size: 0.7rem; padding: 4px 6px; flex: 1; text-align: center; text-decoration: none;">
+                                <i class="fab fa-waze"></i> Waze
+                            </a>
+                        </div>
+                        <button onclick="setDeliveryAsMainLocation('${clientInfo.cnpj}', ${loc.lat}, ${loc.lng})" class="btn btn-outline" style="font-size: 0.68rem; padding: 4px 6px; width: 100%; border-color: #28a745; color: #28a745; background: #f0fff4;">
+                            <i class="fas fa-check-circle"></i> Definir como Endereço Principal
+                        </button>
+                    </div>
+                `);
+
+                clientLocationsMarkers.push({ marker: deliveryMarker, lat: loc.lat, lng: loc.lng, id: loc.entrega_id });
+                allLatLngs.push([loc.lat, loc.lng]);
+            });
+
+            if (allLatLngs.length > 1) {
+                clientLocationsMap.fitBounds(allLatLngs, { padding: [40, 40] });
+            } else if (allLatLngs.length === 1) {
+                clientLocationsMap.setView(allLatLngs[0], 16);
+            }
+
+            // Recalcula o layout do Leaflet para eliminar área cinza
+            setTimeout(() => { if (clientLocationsMap) clientLocationsMap.invalidateSize(); }, 150);
+            setTimeout(() => { if (clientLocationsMap) clientLocationsMap.invalidateSize(); }, 400);
+        }
+
+        if (mapLoading) mapLoading.style.display = 'none';
+
+        // Renderiza lista detalhada abaixo do mapa
+        if (localizacoes.length === 0 && !clientInfo.lat) {
+            listContainer.innerHTML = `
+                <div style="text-align: center; padding: 2rem; background: #fdfdfe; border-radius: 8px; border: 1px dashed #ccc;">
+                    <i class="fas fa-map-pin" style="font-size: 2rem; color: #ccc; margin-bottom: 8px;"></i>
+                    <p style="margin: 0; font-size: 0.85rem; color: #666; font-weight: 500;">Nenhuma entrega com localização GPS registrada ainda.</p>
+                    <small style="color: #999;">Assim que os motoristas registrarem entregas para este cliente, cada endereço de entrega aparecerá automaticamente aqui.</small>
+                </div>
+            `;
+        } else {
+            listContainer.innerHTML = localizacoes.map((loc, idx) => {
+                const gasList = (loc.itens || []).map(i => `<span style="background: #eef2f7; padding: 2px 6px; border-radius: 4px; font-size: 0.72rem; color: #333;">${i.qtd}x ${i.gas} ${i.tam}</span>`).join(' ') || '<span style="font-size:0.75rem; color:#888;">Gás</span>';
+                
+                return `
+                <div class="list-item" style="padding: 12px; background: white; border-radius: 10px; border: 1px solid #e2e8f0; border-left: 4px solid #007bff; display: flex; flex-direction: column; gap: 8px; margin-bottom: 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+                        <div>
+                            <span style="font-weight: 700; font-size: 0.85rem; color: var(--dark); display: flex; align-items: center; gap: 6px;">
+                                <span style="background: #007bff; color: white; width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.7rem;">${idx + 1}</span>
+                                Entrega realizada em ${loc.data_entrega || 'Data N/D'}
+                            </span>
+                            <small style="color: #777; font-size: 0.75rem; margin-top: 2px; display: block;">
+                                Doc / NF: <b>${loc.numero_documento}</b> | Operador: <b>${loc.operador}</b>
+                            </small>
+                        </div>
+                        <button onclick="focusLocationMarker(${loc.lat}, ${loc.lng}, ${idx})" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.72rem; width: auto; color: #007bff; border-color: #007bff;" title="Ver ponto no mapa">
+                            <i class="fas fa-crosshairs"></i> No Mapa
+                        </button>
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
+                        <span style="font-size: 0.72rem; color: #888; font-weight: 600;">Cilindros:</span>
+                        ${gasList}
+                    </div>
+                    <div style="display: flex; gap: 8px; border-top: 1px dashed #eee; padding-top: 8px; margin-top: 2px;">
+                        <a href="https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}" target="_blank" class="btn btn-primary" style="font-size: 0.75rem; padding: 6px 10px; flex: 1; text-align: center; text-decoration: none; border-radius: 6px;">
+                            <i class="fas fa-route"></i> Google Maps
+                        </a>
+                        <a href="https://waze.com/ul?ll=${loc.lat},${loc.lng}&navigate=yes" target="_blank" class="btn btn-outline" style="font-size: 0.75rem; padding: 6px 10px; flex: 1; text-align: center; text-decoration: none; border-radius: 6px; border-color: #33ccff; color: #0099cc;">
+                            <i class="fab fa-waze"></i> Waze
+                        </a>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        }
+
+    } catch (err) {
+        console.error("Erro ao carregar localizações do cliente:", err);
+        if (mapLoading) mapLoading.style.display = 'none';
+        if (listContainer) {
+            listContainer.innerHTML = `
+                <div style="text-align: center; padding: 2rem; color: var(--danger);">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 1.8rem; margin-bottom: 8px;"></i>
+                    <p style="margin: 0; font-size: 0.9rem; font-weight: 600;">Não foi possível carregar as localizações do cliente.</p>
+                    <small style="color: #888;">${err.message}</small>
+                </div>
+            `;
+        }
+    }
+}
+
+function focusLocationMarker(lat, lng, index) {
+    if (clientLocationsMap) {
+        clientLocationsMap.setView([lat, lng], 17, { animate: true });
+        if (clientLocationsMarkers[index] && clientLocationsMarkers[index].marker) {
+            clientLocationsMarkers[index].marker.openPopup();
+        }
+    }
+}
+
+async function setDeliveryAsMainLocation(cnpj, lat, lng) {
+    if (!cnpj) return;
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch('/api/clientes/localizacao', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}`
+            },
+            body: JSON.stringify({ cnpj, lat: String(lat), lng: String(lng) })
+        });
+        if (res.ok) {
+            showToast("Definido como endereço principal do cliente com sucesso!");
+            loadClients();
+            closeClientLocationsModal();
+        } else {
+            showToast("Erro ao atualizar endereço principal", "error");
+        }
+    } catch (e) {
+        showToast("Erro de conexão", "error");
+    }
+}
+
+function closeClientLocationsModal() {
+    const modal = document.getElementById('client-locations-modal');
+    if (modal) modal.style.display = 'none';
+    if (clientLocationsMap) {
+        clientLocationsMap.remove();
+        clientLocationsMap = null;
+        clientLocationsMarkers = [];
     }
 }
 

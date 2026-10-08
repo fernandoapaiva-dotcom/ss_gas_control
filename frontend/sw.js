@@ -1,9 +1,9 @@
-const CACHE_NAME = 'ss-gas-v9';
+const CACHE_NAME = 'ss-gas-v10';
 const ASSETS = [
   '/',
-  '/index.html?v=9',
-  '/style.css?v=9',
-  '/app.js?v=20261008_01',
+  '/index.html?v=10',
+  '/style.css?v=10',
+  '/app.js?v=20261008_02',
   '/assets/logo/SERVSOLDAPNG.png'
 ];
 
