@@ -23,6 +23,34 @@ EVOLUTION_API_URL = os.getenv("EVOLUTION_API_URL")
 EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY")
 EVOLUTION_API_INSTANCE = os.getenv("EVOLUTION_API_INSTANCE", "servsolda")
 
+def get_phone_variants(phone: str) -> list:
+    raw = "".join(filter(str.isdigit, str(phone))).lstrip("0")
+    if not raw:
+        return []
+
+    # Trata caso de número com código do país (55)
+    if raw.startswith("55"):
+        # Se veio com zero após 55 (ex: 55061999998888)
+        if len(raw) > 12 and raw[2] == "0":
+            raw = "55" + raw[3:]
+    elif len(raw) in (10, 11):
+        raw = f"55{raw}"
+
+    variants = [raw]
+
+    # Se for número brasileiro com 55 + DDD (2 dígitos)
+    if raw.startswith("55") and len(raw) in (12, 13):
+        ddd = raw[2:4]
+        subscriber = raw[4:]
+        if len(subscriber) == 9 and subscriber.startswith("9"):
+            # Variante sem o nono dígito (comum em contas antigas do WhatsApp / Baileys)
+            variants.append(f"55{ddd}{subscriber[1:]}")
+        elif len(subscriber) == 8:
+            # Variante com o nono dígito adicionado
+            variants.append(f"55{ddd}9{subscriber}")
+
+    return list(dict.fromkeys(variants))
+
 async def send_whatsapp_receipt_background(
     phone_number: str,
     nome_cliente: str,
@@ -35,16 +63,13 @@ async def send_whatsapp_receipt_background(
         print("[WHATSAPP] Credenciais da Evolution API não encontradas no .env")
         return
 
-    # Sanitize phone number (remove non-digits)
-    raw_phone = "".join(filter(str.isdigit, phone_number))
-    if not raw_phone:
+    phone_variants = get_phone_variants(phone_number)
+    if not phone_variants:
+        print(f"[WHATSAPP] Número de telefone inválido: '{phone_number}'")
         return
-    
-    # Prepend 55 for Brazil if not present
-    if not raw_phone.startswith("55") and len(raw_phone) in (10, 11):
-        raw_phone = f"55{raw_phone}"
 
-    print(f"[WHATSAPP] Iniciando envio autônomo para {raw_phone}...")
+    primary_phone = phone_variants[0]
+    print(f"[WHATSAPP] Iniciando envio autônomo para {primary_phone} (variantes: {phone_variants})...")
 
     # 1. Constrói a mensagem em texto formatado
     import datetime
@@ -133,22 +158,31 @@ async def send_whatsapp_receipt_background(
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         # A. Envia a mensagem de texto principal
-        try:
-            url_text = f"{EVOLUTION_API_URL.rstrip('/')}/message/sendText/{EVOLUTION_API_INSTANCE}"
-            payload_text = {
-                "number": raw_phone,
-                "options": {
+        sent_phone = None
+        for p in phone_variants:
+            try:
+                url_text = f"{EVOLUTION_API_URL.rstrip('/')}/message/sendText/{EVOLUTION_API_INSTANCE}"
+                payload_text = {
+                    "number": p,
+                    "text": message,
+                    "textMessage": {
+                        "text": message
+                    },
                     "delay": 1200,
-                    "presence": "composing"
-                },
-                "textMessage": {
-                    "text": message
+                    "options": {
+                        "delay": 1200,
+                        "presence": "composing"
+                    }
                 }
-            }
-            res = await client.post(url_text, headers=headers, json=payload_text)
-            print(f"[WHATSAPP] Resposta do envio de texto: {res.status_code} - {res.text}")
-        except Exception as e:
-            print(f"[WHATSAPP] Erro ao enviar mensagem de texto: {e}")
+                res = await client.post(url_text, headers=headers, json=payload_text)
+                print(f"[WHATSAPP] Resposta do envio de texto ({p}): {res.status_code} - {res.text}")
+                if res.status_code in (200, 201):
+                    sent_phone = p
+                    break
+            except Exception as e:
+                print(f"[WHATSAPP] Erro ao enviar mensagem de texto para {p}: {e}")
+
+        target_phone = sent_phone or primary_phone
 
         # B. Envia as fotos em anexo
         if fotos and len(fotos) > 0:
@@ -197,7 +231,13 @@ async def send_whatsapp_receipt_background(
 
                     url_media = f"{EVOLUTION_API_URL.rstrip('/')}/message/sendMedia/{EVOLUTION_API_INSTANCE}"
                     payload_media = {
-                        "number": raw_phone,
+                        "number": target_phone,
+                        "mediatype": "image",
+                        "mimetype": "image/jpeg",
+                        "caption": f"Comprovante de Entrega - Foto {idx + 1}",
+                        "media": encoded_string,
+                        "fileName": f"comprovante_{idx + 1}.jpg",
+                        "delay": 1200,
                         "options": {
                             "delay": 1200,
                             "presence": "composing"
@@ -211,7 +251,7 @@ async def send_whatsapp_receipt_background(
                         }
                     }
                     res_media = await client.post(url_media, headers=headers, json=payload_media)
-                    print(f"[WHATSAPP] Resposta do envio da Foto {idx + 1}: {res_media.status_code} - {res_media.text}")
+                    print(f"[WHATSAPP] Resposta do envio da Foto {idx + 1} ({target_phone}): {res_media.status_code} - {res_media.text}")
                 except Exception as e:
                     print(f"[WHATSAPP] Erro ao enviar anexo de foto {idx + 1}: {e}")
 
@@ -791,6 +831,8 @@ async def create_entrega(
             cliente.cnpj = cnpj
         if whatsapp_phone:
             cliente.telefone = whatsapp_phone
+        elif cliente.telefone and not whatsapp_phone:
+            whatsapp_phone = ''.join(filter(str.isdigit, str(cliente.telefone)))
         if payload.get('lat'):
             cliente.lat = payload.get('lat')
             cliente.lng = payload.get('lng')
@@ -958,11 +1000,20 @@ async def filtrar_entregas(
         motorista_db = db.query(Usuario).filter(Usuario.id == e.fk_motorista).first()
         nome_operador = motorista_db.nome if motorista_db else "Operador Desconhecido"
 
+        telefone = None
+        if e.cliente and e.cliente.telefone:
+            telefone = e.cliente.telefone
+        elif e.fk_cliente:
+            c = db.query(Cliente).filter(Cliente.cnpj == e.fk_cliente).first()
+            if c and c.telefone:
+                telefone = c.telefone
+
         result.append({
             "id": e.id,
             "data": e.data_entrega.strftime("%Y-%m-%dT%H:%M:%S") if e.data_entrega else None,
             "nf": e.numero_documento or "S/N",
             "cliente": nome.upper(),
+            "telefone": telefone,
             "operador": nome_operador,
             "fotos": e.fotos_urls.split(",") if e.fotos_urls else [],
             "itens": [{"gas": i.tipo_gas, "tam": i.tamanho_gas, "qtd": i.quantidade, "validade": i.data_validade, "obs": i.observacao, "marca": i.marca} for i in e.cilindros]
@@ -1050,13 +1101,27 @@ async def reenviar_whatsapp(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    whatsapp_phone = payload.get("whatsapp_phone")
-    if not whatsapp_phone:
-        raise HTTPException(status_code=400, detail="Número de WhatsApp não fornecido")
-
     entrega = db.query(Entrega).filter(Entrega.id == id).first()
     if not entrega:
         raise HTTPException(status_code=404, detail="Entrega não encontrada")
+
+    whatsapp_phone = payload.get("whatsapp_phone")
+    if not whatsapp_phone:
+        if entrega.cliente and entrega.cliente.telefone:
+            whatsapp_phone = entrega.cliente.telefone
+        elif entrega.fk_cliente:
+            c = db.query(Cliente).filter(Cliente.cnpj == entrega.fk_cliente).first()
+            if c and c.telefone:
+                whatsapp_phone = c.telefone
+
+    if not whatsapp_phone:
+        raise HTTPException(status_code=400, detail="Número de WhatsApp não fornecido e não cadastrado para este cliente")
+
+    # Salva o telefone no cliente se ele não tinha
+    clean_digits = ''.join(filter(str.isdigit, str(whatsapp_phone)))
+    if clean_digits and entrega.cliente and not entrega.cliente.telefone:
+        entrega.cliente.telefone = clean_digits
+        db.commit()
 
     nome = "Cliente Desconhecido"
     if entrega.cliente:

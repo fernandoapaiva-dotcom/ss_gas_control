@@ -1533,7 +1533,7 @@ async function loadHistory() {
                         </div>
                     ` : ''}
                     <div style="margin-top:16px; border-top:1px dashed #eee; padding-top:12px; display:flex; justify-content:flex-end;">
-                        <button type="button" onclick="event.stopPropagation(); resendWhatsApp(${item.id}, '${(item.cliente || "Cliente").replace(/'/g, "\\'")}')" class="btn btn-outline" style="font-size:0.8rem; padding:6px 14px; border-color:#25D366; color:#25D366; background:#f0fff4; width:auto; display:inline-flex; align-items:center; gap:8px;">
+                        <button type="button" onclick="event.stopPropagation(); resendWhatsApp(${item.id}, '${(item.cliente || "Cliente").replace(/'/g, "\\'")}', '${(item.telefone || "").replace(/'/g, "\\'")}')" class="btn btn-outline" style="font-size:0.8rem; padding:6px 14px; border-color:#25D366; color:#25D366; background:#f0fff4; width:auto; display:inline-flex; align-items:center; gap:8px;">
                             <i class="fab fa-whatsapp" style="font-size:1rem;"></i> Reenviar p/ WhatsApp
                         </button>
                     </div>
@@ -2755,8 +2755,22 @@ async function deleteGas(gasId) {
     }
 }
 
-async function resendWhatsApp(id, clientName) {
-    const rawPhone = prompt(`Digite o número do WhatsApp (com DDD) para reenviar o comprovante de ${clientName}:\nEx: (24) 98888-7777`);
+async function resendWhatsApp(id, clientName, defaultPhone = '') {
+    const rawClean = (defaultPhone || '').replace(/\D/g, '');
+    let formattedDefault = '';
+    if (rawClean.length === 11) {
+        formattedDefault = rawClean.replace(/^(\d{2})(\d)/g, "($1) $2").replace(/(\d)(\d{4})$/, "$1-$2");
+    } else if (rawClean.length === 10) {
+        formattedDefault = rawClean.replace(/^(\d{2})(\d)/g, "($1) $2").replace(/(\d)(\d{4})$/, "$1-$2");
+    } else if (rawClean.length > 0) {
+        formattedDefault = rawClean;
+    }
+
+    const promptMsg = formattedDefault
+        ? `Confirme ou altere o WhatsApp de ${clientName} para reenviar o comprovante:\n(Cadastrado: ${formattedDefault})`
+        : `Digite o número do WhatsApp (com DDD) para reenviar o comprovante de ${clientName}:\nEx: (61) 98888-7777`;
+
+    const rawPhone = prompt(promptMsg, formattedDefault);
     if (!rawPhone) return;
     
     const phone = rawPhone.replace(/\D/g, '');
@@ -2779,7 +2793,8 @@ async function resendWhatsApp(id, clientName) {
         if (res.ok) {
             showToast("Comprovante reenviado com sucesso!");
         } else {
-            showToast("Erro ao reenviar comprovante", "error");
+            const errData = await res.json().catch(() => ({}));
+            showToast(errData.detail || "Erro ao reenviar comprovante", "error");
         }
     } catch(e) {
         showToast("Erro de conexão", "error");
