@@ -21,6 +21,23 @@ class Cliente(Base):
     lat = Column(String, nullable=True)
     lng = Column(String, nullable=True)
     entregas = relationship("Entrega", back_populates="cliente")
+    enderecos = relationship("ClienteEndereco", back_populates="cliente", cascade="all, delete-orphan")
+
+class ClienteEndereco(Base):
+    __tablename__ = "cliente_enderecos"
+    id = Column(Integer, primary_key=True, index=True)
+    fk_cliente = Column(String(14), ForeignKey("clientes.cnpj"), nullable=False, index=True)
+    nome = Column(String, nullable=False)   # ex: "Endereço São Sebastião"
+    regiao = Column(String, nullable=True)  # ex: "São Sebastião"
+    lat = Column(Float, nullable=False)
+    lng = Column(Float, nullable=False)
+    raio_km = Column(Float, default=1.0)
+    is_principal = Column(Integer, default=0) # 1 se principal, 0 caso contrario
+    total_entregas = Column(Integer, default=1)
+    ultima_entrega = Column(DateTime, nullable=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+
+    cliente = relationship("Cliente", back_populates="enderecos")
 
 class Entrega(Base):
     __tablename__ = "entregas"

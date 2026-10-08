@@ -1,13 +1,15 @@
 from fastapi import FastAPI, Request, HTTPException, Depends, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy import create_engine, and_, or_
 from sqlalchemy.orm import sessionmaker, Session
-from models import Base, Usuario, Cliente, Entrega, CilindroAplicado, Gas
+from models import Base, Usuario, Cliente, Entrega, CilindroAplicado, Gas, ClienteEndereco
 from storage import upload_file_to_drive, upload_temp_file_to_drive, delete_file_from_drive, get_drive_service, get_google_config, CONFIG_PATH
 from auth import get_current_user, role_required
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import json
+import math
 import io
+import urllib.request
 import httpx
 import base64
 from datetime import datetime, timezone
@@ -468,6 +470,82 @@ async def update_cliente_localizacao(
     db.commit()
     return {"status": "success", "lat": lat, "lng": lng}
 
+# --- GEOLOCATION, REGION NAMING & CLUSTERING (1 KM RADIUS) ---
+
+DF_REGIOES = [
+    ('São Sebastião', -15.9078, -47.7725),
+    ('Itapoã', -15.7483, -47.7770),
+    ('Recanto das Emas', -15.9069, -48.0678),
+    ('Paranoá', -15.7728, -47.7786),
+    ('Ceilândia', -15.8203, -48.1130),
+    ('Taguatinga', -15.8336, -48.0567),
+    ('Samambaia', -15.8753, -48.0858),
+    ('Águas Claras', -15.8399, -48.0261),
+    ('Vicente Pires', -15.8042, -48.0286),
+    ('Guará', -15.8242, -47.9806),
+    ('Plano Piloto', -15.7942, -47.8822),
+    ('Gama', -16.0174, -48.0631),
+    ('Santa Maria', -16.0167, -47.9833),
+    ('Riacho Fundo', -15.8828, -48.0178),
+    ('Riacho Fundo II', -15.8972, -48.0461),
+    ('Núcleo Bandeirante', -15.8722, -47.9686),
+    ('Candangolândia', -15.8542, -47.9511),
+    ('Sobradinho', -15.6534, -47.7944),
+    ('Sobradinho II', -15.6297, -47.8083),
+    ('Planaltina', -15.6247, -47.6542),
+    ('Jardim Botânico', -15.8778, -47.8222),
+    ('SIA', -15.8167, -47.9500),
+    ('SCIA / Estrutural', -15.7833, -47.9833),
+    ('Park Way', -15.8944, -47.9583),
+    ('Cruzeiro / Sudoeste', -15.7958, -47.9308),
+    ('Lago Sul', -15.8458, -47.8681),
+    ('Lago Norte', -15.7333, -47.8667),
+    ('Brazlândia', -15.6708, -48.2017),
+    ('Valparaíso de Goiás', -16.0689, -47.9767),
+    ('Luziânia', -16.2528, -47.9500),
+    ('Águas Lindas', -15.7625, -48.2817),
+    ('Novo Gama', -16.0583, -48.0417),
+    ('Cidade Ocidental', -16.0767, -47.9250),
+    ('Formosa', -15.5392, -47.3353),
+]
+
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+def get_region_name(lat: float, lng: float, obs_hint: str = "") -> str:
+    # 1. Verifica se na observação da entrega já veio o nome de alguma RA conhecida
+    if obs_hint:
+        obs_lower = obs_hint.lower()
+        for r_name, _, _ in DF_REGIOES:
+            if r_name.lower() in obs_lower:
+                return r_name
+
+    # 2. Tenta Nominatim OpenStreetMap (com timeout de 2s)
+    try:
+        url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json"
+        req = urllib.request.Request(url, headers={"User-Agent": "SSGasControl/1.0"})
+        with urllib.request.urlopen(req, timeout=2.0) as resp:
+            data = json.loads(resp.read().decode())
+            addr = data.get("address", {})
+            for k in ["city", "town", "suburb", "city_district", "neighbourhood"]:
+                v = addr.get(k)
+                if v and v.lower() not in ["distrito federal", "região centro-oeste", "brasil"]:
+                    if v.lower() == "brasília":
+                        continue
+                    return v
+            if addr.get("city"):
+                return addr.get("city")
+    except Exception:
+        pass
+
+    # 3. Fallback: RA mais próxima
+    closest = min(DF_REGIOES, key=lambda x: haversine_km(lat, lng, x[1], x[2]))
+    return closest[0]
+
 @app.get("/api/clientes/{cnpj}/localizacoes")
 async def get_cliente_localizacoes(cnpj: str, db: Session = Depends(get_db)):
     doc_limpo = ''.join(filter(str.isdigit, cnpj))
@@ -480,14 +558,14 @@ async def get_cliente_localizacoes(cnpj: str, db: Session = Depends(get_db)):
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
-    # Busca todas as entregas do cliente pelo CNPJ ou pelo nome
+    # Busca todas as entregas do cliente que possuem coordenadas GPS válidas
     entregas_query = db.query(Entrega).filter(
         (Entrega.fk_cliente == cliente.cnpj) |
         (Entrega.nome_cliente.ilike(cliente.nome_razao))
     )
     entregas = entregas_query.order_by(Entrega.data_entrega.desc()).all()
 
-    localizacoes = []
+    delivs_gps = []
     for e in entregas:
         if e.lat and e.lng:
             try:
@@ -510,17 +588,169 @@ async def get_cliente_localizacoes(cnpj: str, db: Session = Depends(get_db)):
                 for c in e.cilindros
             ]
 
-            localizacoes.append({
+            obs_txt = " ".join([c.observacao or "" for c in e.cilindros if c.observacao])
+
+            delivs_gps.append({
                 "entrega_id": e.id,
                 "data_entrega": e.data_entrega.strftime("%d/%m/%Y %H:%M") if e.data_entrega else None,
+                "data_dt": e.data_entrega or datetime.utcnow(),
                 "data_iso": e.data_entrega.isoformat() if e.data_entrega else None,
                 "numero_documento": e.numero_documento or "S/N",
                 "operador": nome_operador,
                 "lat": lat_f,
                 "lng": lng_f,
                 "itens": itens,
+                "obs": obs_txt,
                 "fotos": [f for f in (e.fotos_urls.split(",") if e.fotos_urls else []) if f.strip()]
             })
+
+    # Consulta endereços já cadastrados/salvos no banco para o cliente
+    db_enderecos = db.query(ClienteEndereco).filter(ClienteEndereco.fk_cliente == cliente.cnpj).all()
+
+    # Se não houver nenhum endereço salvo e tivermos entregas com GPS, agrupamos automaticamente por raio (1.0 km)
+    if not db_enderecos and delivs_gps:
+        clusters = []
+        for d in delivs_gps:
+            reg = get_region_name(d["lat"], d["lng"], d["obs"])
+            matched = None
+            for c in clusters:
+                dist = haversine_km(d["lat"], d["lng"], c["lat"], c["lng"])
+                # Agrupa se estiver no raio de 1 km OU até 2 km se for a mesma região
+                if dist <= 1.0 or (dist <= 2.0 and c["regiao"] == reg):
+                    matched = c
+                    break
+            if matched:
+                matched["entregas"].append(d)
+                matched["total"] += 1
+                if d["data_dt"] > matched["ultima_dt"]:
+                    matched["ultima_dt"] = d["data_dt"]
+            else:
+                clusters.append({
+                    "nome": f"Endereço {reg}",
+                    "regiao": reg,
+                    "lat": d["lat"],
+                    "lng": d["lng"],
+                    "raio_km": 1.0,
+                    "total": 1,
+                    "ultima_dt": d["data_dt"],
+                    "entregas": [d]
+                })
+
+        # Salva os novos clusters no banco de dados como endereços permanentes
+        for idx, c in enumerate(clusters):
+            is_prim = 1 if idx == 0 else 0
+            novo_end = ClienteEndereco(
+                fk_cliente=cliente.cnpj,
+                nome=c["nome"],
+                regiao=c["regiao"],
+                lat=c["lat"],
+                lng=c["lng"],
+                raio_km=c["raio_km"],
+                is_principal=is_prim,
+                total_entregas=c["total"],
+                ultima_entrega=c["ultima_dt"]
+            )
+            db.add(novo_end)
+            if is_prim and not cliente.lat:
+                cliente.lat = str(c["lat"])
+                cliente.lng = str(c["lng"])
+        db.commit()
+        db_enderecos = db.query(ClienteEndereco).filter(ClienteEndereco.fk_cliente == cliente.cnpj).all()
+
+    # Se temos endereços no banco, associamos as entregas a cada endereço correspondente
+    enderecos_res = []
+
+    for end in db_enderecos:
+        matching_delivs = []
+        for d in delivs_gps:
+            dist = haversine_km(d["lat"], d["lng"], end.lat, end.lng)
+            if dist <= (end.raio_km or 1.0):
+                matching_delivs.append(d)
+
+        # Atualiza métricas se mudaram
+        if len(matching_delivs) > 0:
+            end.total_entregas = len(matching_delivs)
+            end.ultima_entrega = max([x["data_dt"] for x in matching_delivs])
+
+        ultima_data_str = end.ultima_entrega.strftime("%d/%m/%Y %H:%M") if end.ultima_entrega else None
+
+        enderecos_res.append({
+            "id": end.id,
+            "nome": end.nome,
+            "regiao": end.regiao,
+            "lat": end.lat,
+            "lng": end.lng,
+            "raio_km": end.raio_km or 1.0,
+            "is_principal": bool(end.is_principal),
+            "total_entregas": len(matching_delivs) if matching_delivs else (end.total_entregas or 0),
+            "ultima_entrega": ultima_data_str,
+            "entregas": [
+                {k: v for k, v in d.items() if k != "data_dt"}
+                for d in matching_delivs
+            ]
+        })
+
+    # Verifica se há entregas que não caíram em nenhum endereço existente (fora do raio de 1 km)
+    assigned_ids = set()
+    for end_obj in enderecos_res:
+        for d in end_obj["entregas"]:
+            assigned_ids.add(d["entrega_id"])
+
+    novos_adicionados = False
+    for d in delivs_gps:
+        if d["entrega_id"] not in assigned_ids:
+            # Novo local de entrega encontrado! Cria um novo endereço
+            reg = get_region_name(d["lat"], d["lng"], d["obs"])
+            novo_end = ClienteEndereco(
+                fk_cliente=cliente.cnpj,
+                nome=f"Endereço {reg}",
+                regiao=reg,
+                lat=d["lat"],
+                lng=d["lng"],
+                raio_km=1.0,
+                is_principal=0,
+                total_entregas=1,
+                ultima_entrega=d["data_dt"]
+            )
+            db.add(novo_end)
+            novos_adicionados = True
+
+    if novos_adicionados:
+        db.commit()
+        # Recarrega a lista
+        db_enderecos = db.query(ClienteEndereco).filter(ClienteEndereco.fk_cliente == cliente.cnpj).all()
+        enderecos_res = []
+        for end in db_enderecos:
+            matching_delivs = [
+                d for d in delivs_gps
+                if haversine_km(d["lat"], d["lng"], end.lat, end.lng) <= (end.raio_km or 1.0)
+            ]
+            ultima_data_str = end.ultima_entrega.strftime("%d/%m/%Y %H:%M") if end.ultima_entrega else None
+            enderecos_res.append({
+                "id": end.id,
+                "nome": end.nome,
+                "regiao": end.regiao,
+                "lat": end.lat,
+                "lng": end.lng,
+                "raio_km": end.raio_km or 1.0,
+                "is_principal": bool(end.is_principal),
+                "total_entregas": len(matching_delivs),
+                "ultima_entrega": ultima_data_str,
+                "entregas": [
+                    {k: v for k, v in d.items() if k != "data_dt"}
+                    for d in matching_delivs
+                ]
+            })
+
+    # Garante que ao menos um seja principal se houver endereço
+    if enderecos_res and not any(e["is_principal"] for e in enderecos_res):
+        enderecos_res[0]["is_principal"] = True
+        first_db = db.query(ClienteEndereco).filter(ClienteEndereco.id == enderecos_res[0]["id"]).first()
+        if first_db:
+            first_db.is_principal = 1
+            cliente.lat = str(first_db.lat)
+            cliente.lng = str(first_db.lng)
+            db.commit()
 
     cliente_lat = None
     cliente_lng = None
@@ -540,9 +770,81 @@ async def get_cliente_localizacoes(cnpj: str, db: Session = Depends(get_db)):
             "lat": cliente_lat,
             "lng": cliente_lng
         },
-        "total_entregas_com_gps": len(localizacoes),
-        "localizacoes": localizacoes
+        "total_enderecos": len(enderecos_res),
+        "total_entregas_com_gps": len(delivs_gps),
+        "enderecos": enderecos_res
     }
+
+@app.put("/api/clientes/{cnpj}/enderecos/{endereco_id}")
+async def update_cliente_endereco(
+    cnpj: str,
+    endereco_id: int,
+    payload: dict,
+    db: Session = Depends(get_db)
+):
+    doc_limpo = ''.join(filter(str.isdigit, cnpj))
+    end = db.query(ClienteEndereco).filter(
+        ClienteEndereco.id == endereco_id,
+        ClienteEndereco.fk_cliente == (doc_limpo or cnpj)
+    ).first()
+    if not end:
+        raise HTTPException(status_code=404, detail="Endereço não encontrado")
+
+    novo_nome = payload.get("nome")
+    if novo_nome and novo_nome.strip():
+        end.nome = novo_nome.strip()
+
+    if "raio_km" in payload and payload["raio_km"]:
+        try:
+            end.raio_km = float(payload["raio_km"])
+        except ValueError:
+            pass
+
+    db.commit()
+    return {"status": "success", "id": end.id, "nome": end.nome, "raio_km": end.raio_km}
+
+@app.post("/api/clientes/{cnpj}/enderecos/{endereco_id}/principal")
+async def set_cliente_endereco_principal(
+    cnpj: str,
+    endereco_id: int,
+    db: Session = Depends(get_db)
+):
+    doc_limpo = ''.join(filter(str.isdigit, cnpj))
+    cliente = db.query(Cliente).filter(Cliente.cnpj == (doc_limpo or cnpj)).first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+
+    # Zera is_principal para todos os endereços desse cliente
+    db.query(ClienteEndereco).filter(ClienteEndereco.fk_cliente == cliente.cnpj).update({"is_principal": 0})
+
+    # Marca o selecionado
+    end = db.query(ClienteEndereco).filter(ClienteEndereco.id == endereco_id).first()
+    if not end:
+        raise HTTPException(status_code=404, detail="Endereço não encontrado")
+
+    end.is_principal = 1
+    cliente.lat = str(end.lat)
+    cliente.lng = str(end.lng)
+    db.commit()
+    return {"status": "success", "id": end.id, "nome": end.nome, "lat": end.lat, "lng": end.lng}
+
+@app.delete("/api/clientes/{cnpj}/enderecos/{endereco_id}")
+async def delete_cliente_endereco(
+    cnpj: str,
+    endereco_id: int,
+    db: Session = Depends(get_db)
+):
+    doc_limpo = ''.join(filter(str.isdigit, cnpj))
+    end = db.query(ClienteEndereco).filter(
+        ClienteEndereco.id == endereco_id,
+        ClienteEndereco.fk_cliente == (doc_limpo or cnpj)
+    ).first()
+    if not end:
+        raise HTTPException(status_code=404, detail="Endereço não encontrado")
+
+    db.delete(end)
+    db.commit()
+    return {"status": "success"}
 
 # --- USER CRUD (ADMIN ONLY) ---
 
@@ -909,15 +1211,56 @@ async def create_entrega(
             cliente.telefone = whatsapp_phone
         elif cliente.telefone and not whatsapp_phone:
             whatsapp_phone = ''.join(filter(str.isdigit, str(cliente.telefone)))
-        if payload.get('lat'):
-            cliente.lat = payload.get('lat')
-            cliente.lng = payload.get('lng')
+        if not cliente.lat and payload.get('lat'):
+            cliente.lat = str(payload.get('lat'))
+            cliente.lng = str(payload.get('lng'))
         db.commit()
 
     try:
         data_entrega_parsed = datetime.fromisoformat(data_entrega_str.replace('Z', '+00:00')) if data_entrega_str else datetime.utcnow()
     except:
         data_entrega_parsed = datetime.utcnow()
+
+    # Gerenciamento de múltiplos endereços por raio de 1 km
+    deliv_lat = payload.get('lat')
+    deliv_lng = payload.get('lng')
+    if deliv_lat and deliv_lng and cliente and cliente.cnpj:
+        try:
+            lat_f = float(str(deliv_lat).strip())
+            lng_f = float(str(deliv_lng).strip())
+            existentes = db.query(ClienteEndereco).filter(ClienteEndereco.fk_cliente == cliente.cnpj).all()
+            matched_end = None
+            for end in existentes:
+                dist = haversine_km(lat_f, lng_f, end.lat, end.lng)
+                if dist <= (end.raio_km or 1.0):
+                    matched_end = end
+                    break
+            
+            if matched_end:
+                matched_end.total_entregas = (matched_end.total_entregas or 1) + 1
+                matched_end.ultima_entrega = data_entrega_parsed
+            else:
+                obs_hint = " ".join([c.get("observacao", "") for c in cilindros_data if c.get("observacao")])
+                regiao = get_region_name(lat_f, lng_f, obs_hint)
+                is_primeiro = 1 if (not cliente.lat or len(existentes) == 0) else 0
+                novo_end = ClienteEndereco(
+                    fk_cliente=cliente.cnpj,
+                    nome=f"Endereço {regiao}",
+                    regiao=regiao,
+                    lat=lat_f,
+                    lng=lng_f,
+                    raio_km=1.0,
+                    is_principal=is_primeiro,
+                    total_entregas=1,
+                    ultima_entrega=data_entrega_parsed
+                )
+                db.add(novo_end)
+                if is_primeiro or not cliente.lat:
+                    cliente.lat = str(lat_f)
+                    cliente.lng = str(lng_f)
+            db.commit()
+        except Exception as geo_err:
+            print(f"[ERRO AGROUPAMENTO NOVO ENDERECO] {geo_err}")
 
     entrega = Entrega(
         numero_documento=numero_documento,

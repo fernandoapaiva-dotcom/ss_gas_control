@@ -2405,9 +2405,11 @@ async function deleteClientLocation(cnpj) {
     }
 }
 
-// --- TODAS AS LOCALIZAÇÕES DE ENTREGA DO CLIENTE ---
+// --- ENDEREÇOS E LOCALIZAÇÕES DO CLIENTE (AGRUPAMENTO POR RAIO E REGIÃO) ---
 let clientLocationsMap = null;
 let clientLocationsMarkers = [];
+let clientLocationsCircles = [];
+let currentViewingCnpj = null;
 
 async function openClientAllLocations(cnpj, clientName) {
     const modal = document.getElementById('client-locations-modal');
@@ -2419,17 +2421,19 @@ async function openClientAllLocations(cnpj, clientName) {
     
     if (!modal) return;
     
+    currentViewingCnpj = cnpj;
     modal.style.display = 'flex';
-    if (title) title.innerHTML = `<i class="fas fa-map-marked-alt"></i> ${(clientName || 'Cliente').toUpperCase()}`;
-    if (subtitle) subtitle.innerText = `Consultando histórico de entregas com GPS...`;
+    if (title) title.innerHTML = `<i class="fas fa-layer-group"></i> ${(clientName || 'Cliente').toUpperCase()}`;
+    if (subtitle) subtitle.innerText = `Agrupando entregas por raio de 1 km e identificando regiões...`;
     if (mapLoading) mapLoading.style.display = 'flex';
-    if (listContainer) listContainer.innerHTML = '<p style="text-align: center; color: #888; padding: 1.5rem;"><i class="fas fa-spinner fa-spin"></i> Carregando localizações de entrega de gás...</p>';
+    if (listContainer) listContainer.innerHTML = '<p style="text-align: center; color: #888; padding: 1.5rem;"><i class="fas fa-spinner fa-spin"></i> Carregando e unificando endereços...</p>';
     
-    // Destrói mapa anterior se existir para evitar bug cinza do Leaflet
+    // Destrói mapa anterior se existir
     if (clientLocationsMap) {
         clientLocationsMap.remove();
         clientLocationsMap = null;
         clientLocationsMarkers = [];
+        clientLocationsCircles = [];
     }
 
     try {
@@ -2439,27 +2443,28 @@ async function openClientAllLocations(cnpj, clientName) {
         
         const data = await res.json();
         const clientInfo = data.cliente || {};
-        const localizacoes = data.localizacoes || [];
+        const enderecos = data.enderecos || [];
         
         if (subtitle) {
             subtitle.innerText = `${clientInfo.nome_razao || clientName} | CNPJ: ${clientInfo.cnpj || 'S/N'}${clientInfo.telefone ? ' | Tel: ' + clientInfo.telefone : ''}`;
         }
         if (countBadge) {
-            countBadge.innerText = `${localizacoes.length} entrega(s) com GPS`;
+            countBadge.innerText = `${enderecos.length} endereço(s) identificado(s)`;
         }
 
         const mapContainer = document.getElementById('client-locations-map');
         if (mapContainer) {
-            let defaultLat = -15.7975; // Brasília / Padrão Brasil
+            let defaultLat = -15.7975;
             let defaultLng = -47.8919;
             let defaultZoom = 12;
 
-            if (clientInfo.lat && clientInfo.lng) {
+            if (enderecos.length > 0) {
+                const prim = enderecos.find(e => e.is_principal) || enderecos[0];
+                defaultLat = prim.lat;
+                defaultLng = prim.lng;
+            } else if (clientInfo.lat && clientInfo.lng) {
                 defaultLat = clientInfo.lat;
                 defaultLng = clientInfo.lng;
-            } else if (localizacoes.length > 0) {
-                defaultLat = localizacoes[0].lat;
-                defaultLng = localizacoes[0].lng;
             }
 
             clientLocationsMap = L.map(mapContainer, { zoomControl: true }).setView([defaultLat, defaultLng], defaultZoom);
@@ -2469,13 +2474,19 @@ async function openClientAllLocations(cnpj, clientName) {
             }).addTo(clientLocationsMap);
 
             const allLatLngs = [];
+            clientLocationsMarkers = [];
+            clientLocationsCircles = [];
 
-            // 1. Marcador da Localização Principal se houver
-            if (clientInfo.lat && clientInfo.lng) {
-                const mainPinIcon = L.divIcon({
-                    className: 'custom-main-pin',
+            // Marcadores para cada Endereço Consolidado
+            enderecos.forEach((end, index) => {
+                const isPrincipal = !!end.is_principal;
+                const pinBg = isPrincipal ? '#28a745' : '#007bff';
+                const pinIcon = isPrincipal ? '<i class="fas fa-star" style="transform: rotate(45deg); color: white; font-size: 11px;"></i>' : `<span style="transform: rotate(45deg); color: white; font-weight: bold; font-size: 11px;">${index + 1}</span>`;
+
+                const customIcon = L.divIcon({
+                    className: 'custom-region-pin',
                     html: `<div style="
-                        background-color: #28a745;
+                        background-color: ${pinBg};
                         width: 28px;
                         height: 28px;
                         border-radius: 50% 50% 50% 0;
@@ -2488,146 +2499,168 @@ async function openClientAllLocations(cnpj, clientName) {
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                    "><i class="fas fa-star" style="transform: rotate(45deg); color: white; font-size: 11px;"></i></div>`,
+                    ">${pinIcon}</div>`,
                     iconSize: [28, 28],
                     iconAnchor: [14, 28]
                 });
 
-                const mainMarker = L.marker([clientInfo.lat, clientInfo.lng], { icon: mainPinIcon }).addTo(clientLocationsMap);
-                mainMarker.bindPopup(`
-                    <div style="min-width: 200px; padding: 4px;">
-                        <h4 style="margin: 0 0 4px 0; color: #28a745; font-size: 0.9rem;"><i class="fas fa-star"></i> Endereço Principal</h4>
-                        <p style="margin: 0 0 8px 0; font-size: 0.78rem; color: #666;">Localização oficial cadastrada do cliente.</p>
-                        <div style="display: flex; gap: 6px;">
-                            <a href="https://www.google.com/maps/dir/?api=1&destination=${clientInfo.lat},${clientInfo.lng}" target="_blank" class="btn btn-primary" style="font-size: 0.72rem; padding: 4px 8px; flex: 1; text-align: center; text-decoration: none;">
-                                <i class="fas fa-route"></i> Maps
-                            </a>
-                            <a href="https://waze.com/ul?ll=${clientInfo.lat},${clientInfo.lng}&navigate=yes" target="_blank" class="btn btn-outline" style="font-size: 0.72rem; padding: 4px 8px; flex: 1; text-align: center; text-decoration: none;">
-                                <i class="fab fa-waze"></i> Waze
-                            </a>
-                        </div>
-                    </div>
-                `);
-                allLatLngs.push([clientInfo.lat, clientInfo.lng]);
-            }
+                const marker = L.marker([end.lat, end.lng], { icon: customIcon }).addTo(clientLocationsMap);
 
-            // 2. Marcadores das entregas realizadas com GPS
-            localizacoes.forEach((loc, index) => {
-                const deliveryIcon = L.divIcon({
-                    className: 'custom-delivery-pin',
-                    html: `<div style="
-                        background-color: #007bff;
-                        width: 26px;
-                        height: 26px;
-                        border-radius: 50% 50% 50% 0;
-                        position: absolute;
-                        transform: rotate(-45deg);
-                        left: -13px;
-                        top: -26px;
-                        border: 2px solid white;
-                        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                    "><span style="transform: rotate(45deg); color: white; font-weight: bold; font-size: 10px;">${index + 1}</span></div>`,
-                    iconSize: [26, 26],
-                    iconAnchor: [13, 26]
-                });
+                // Círculo representando a área de abrangência do raio (1 km)
+                const circle = L.circle([end.lat, end.lng], {
+                    radius: (end.raio_km || 1.0) * 1000,
+                    color: pinBg,
+                    fillColor: pinBg,
+                    fillOpacity: 0.10,
+                    weight: 1.5,
+                    dashArray: '4, 4'
+                }).addTo(clientLocationsMap);
 
-                const deliveryMarker = L.marker([loc.lat, loc.lng], { icon: deliveryIcon }).addTo(clientLocationsMap);
-                const gasDetails = (loc.itens || []).map(i => `${i.qtd}x ${i.gas} ${i.tam}`).join(", ") || "Cilindros de Gás";
+                // Tooltip amigável
+                marker.bindTooltip(`<strong>${end.nome}</strong> (${end.total_entregas} entregas)`, { direction: 'top', offset: [0, -28] });
 
-                deliveryMarker.bindPopup(`
-                    <div style="min-width: 220px; padding: 4px;">
-                        <h4 style="margin: 0 0 4px 0; color: #007bff; font-size: 0.88rem;"><i class="fas fa-truck"></i> Entrega #${index + 1}</h4>
-                        <p style="margin: 0 0 2px 0; font-size: 0.75rem; color: #555;"><b>Data:</b> ${loc.data_entrega || 'N/D'}</p>
-                        <p style="margin: 0 0 2px 0; font-size: 0.75rem; color: #555;"><b>NF / Doc:</b> ${loc.numero_documento}</p>
-                        <p style="margin: 0 0 6px 0; font-size: 0.75rem; color: #555;"><b>Itens:</b> ${gasDetails}</p>
+                const popupHtml = `
+                    <div style="min-width: 230px; padding: 4px;">
+                        <h4 style="margin: 0 0 4px 0; color: ${pinBg}; font-size: 0.92rem; display: flex; align-items: center; justify-content: space-between;">
+                            <span><i class="fas fa-map-marker-alt"></i> ${end.nome}</span>
+                            ${isPrincipal ? '<span style="background: #28a745; color: white; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">Principal</span>' : ''}
+                        </h4>
+                        <p style="margin: 0 0 2px 0; font-size: 0.76rem; color: #555;"><b>Região:</b> ${end.regiao || 'DF'} | <b>Raio:</b> ${end.raio_km || 1.0} km</p>
+                        <p style="margin: 0 0 2px 0; font-size: 0.76rem; color: #555;"><b>Entregas realizadas:</b> ${end.total_entregas}</p>
+                        <p style="margin: 0 0 8px 0; font-size: 0.76rem; color: #555;"><b>Última entrega:</b> ${end.ultima_entrega || 'N/D'}</p>
+                        
                         <div style="display: flex; gap: 4px; margin-bottom: 6px;">
-                            <a href="https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}" target="_blank" class="btn btn-primary" style="font-size: 0.7rem; padding: 4px 6px; flex: 1; text-align: center; text-decoration: none;">
+                            <a href="https://www.google.com/maps/dir/?api=1&destination=${end.lat},${end.lng}" target="_blank" class="btn btn-primary" style="font-size: 0.72rem; padding: 4px 6px; flex: 1; text-align: center; text-decoration: none;">
                                 <i class="fas fa-route"></i> Maps
                             </a>
-                            <a href="https://waze.com/ul?ll=${loc.lat},${loc.lng}&navigate=yes" target="_blank" class="btn btn-outline" style="font-size: 0.7rem; padding: 4px 6px; flex: 1; text-align: center; text-decoration: none;">
+                            <a href="https://waze.com/ul?ll=${end.lat},${end.lng}&navigate=yes" target="_blank" class="btn btn-outline" style="font-size: 0.72rem; padding: 4px 6px; flex: 1; text-align: center; text-decoration: none;">
                                 <i class="fab fa-waze"></i> Waze
                             </a>
                         </div>
-                        <button onclick="setDeliveryAsMainLocation('${clientInfo.cnpj}', ${loc.lat}, ${loc.lng})" class="btn btn-outline" style="font-size: 0.68rem; padding: 4px 6px; width: 100%; border-color: #28a745; color: #28a745; background: #f0fff4;">
-                            <i class="fas fa-check-circle"></i> Definir como Endereço Principal
-                        </button>
+                        <div style="display: flex; gap: 4px;">
+                            ${!isPrincipal ? `
+                            <button onclick="setAddressAsPrincipal('${clientInfo.cnpj}', ${end.id})" class="btn btn-outline" style="font-size: 0.68rem; padding: 4px 6px; flex: 1; border-color: #28a745; color: #28a745; background: #f0fff4;">
+                                <i class="fas fa-star"></i> Definir Principal
+                            </button>
+                            ` : ''}
+                            <button onclick="renameClientAddress('${clientInfo.cnpj}', ${end.id}, '${end.nome.replace(/'/g, "\\'")}')" class="btn btn-outline" style="font-size: 0.68rem; padding: 4px 6px; flex: 1; border-color: #6c757d; color: #495057;">
+                                <i class="fas fa-edit"></i> Renomear
+                            </button>
+                        </div>
                     </div>
-                `);
+                `;
+                marker.bindPopup(popupHtml);
 
-                clientLocationsMarkers.push({ marker: deliveryMarker, lat: loc.lat, lng: loc.lng, id: loc.entrega_id });
-                allLatLngs.push([loc.lat, loc.lng]);
+                clientLocationsMarkers.push({ marker, circle, lat: end.lat, lng: end.lng, id: end.id });
+                allLatLngs.push([end.lat, end.lng]);
             });
 
             if (allLatLngs.length > 1) {
-                clientLocationsMap.fitBounds(allLatLngs, { padding: [40, 40] });
+                clientLocationsMap.fitBounds(allLatLngs, { padding: [50, 50] });
             } else if (allLatLngs.length === 1) {
-                clientLocationsMap.setView(allLatLngs[0], 16);
+                clientLocationsMap.setView(allLatLngs[0], 15);
             }
 
-            // Recalcula o layout do Leaflet para eliminar área cinza
             setTimeout(() => { if (clientLocationsMap) clientLocationsMap.invalidateSize(); }, 150);
             setTimeout(() => { if (clientLocationsMap) clientLocationsMap.invalidateSize(); }, 400);
         }
 
         if (mapLoading) mapLoading.style.display = 'none';
 
-        // Renderiza lista detalhada abaixo do mapa
-        if (localizacoes.length === 0 && !clientInfo.lat) {
+        // Renderiza lista de endereços consolidados
+        if (enderecos.length === 0) {
             listContainer.innerHTML = `
                 <div style="text-align: center; padding: 2rem; background: #fdfdfe; border-radius: 8px; border: 1px dashed #ccc;">
                     <i class="fas fa-map-pin" style="font-size: 2rem; color: #ccc; margin-bottom: 8px;"></i>
-                    <p style="margin: 0; font-size: 0.85rem; color: #666; font-weight: 500;">Nenhuma entrega com localização GPS registrada ainda.</p>
-                    <small style="color: #999;">Assim que os motoristas registrarem entregas para este cliente, cada endereço de entrega aparecerá automaticamente aqui.</small>
+                    <p style="margin: 0; font-size: 0.85rem; color: #666; font-weight: 500;">Nenhum endereço de entrega registrado ainda.</p>
+                    <small style="color: #999;">Assim que os motoristas fizerem entregas com GPS, os endereços serão agrupados por região automaticamente aqui.</small>
                 </div>
             `;
         } else {
-            listContainer.innerHTML = localizacoes.map((loc, idx) => {
-                const gasList = (loc.itens || []).map(i => `<span style="background: #eef2f7; padding: 2px 6px; border-radius: 4px; font-size: 0.72rem; color: #333;">${i.qtd}x ${i.gas} ${i.tam}</span>`).join(' ') || '<span style="font-size:0.75rem; color:#888;">Gás</span>';
-                
+            listContainer.innerHTML = enderecos.map((end, idx) => {
+                const isPrincipal = !!end.is_principal;
+                const borderCol = isPrincipal ? '#28a745' : '#007bff';
+                const delivs = end.entregas || [];
+
                 return `
-                <div class="list-item" style="padding: 12px; background: white; border-radius: 10px; border: 1px solid #e2e8f0; border-left: 4px solid #007bff; display: flex; flex-direction: column; gap: 8px; margin-bottom: 0;">
+                <div class="list-item" style="padding: 14px; background: white; border-radius: 12px; border: 1px solid #e2e8f0; border-left: 5px solid ${borderCol}; display: flex; flex-direction: column; gap: 10px; margin-bottom: 0; box-shadow: 0 1px 4px rgba(0,0,0,0.04);">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
                         <div>
-                            <span style="font-weight: 700; font-size: 0.85rem; color: var(--dark); display: flex; align-items: center; gap: 6px;">
-                                <span style="background: #007bff; color: white; width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.7rem;">${idx + 1}</span>
-                                Entrega realizada em ${loc.data_entrega || 'Data N/D'}
-                            </span>
-                            <small style="color: #777; font-size: 0.75rem; margin-top: 2px; display: block;">
-                                Doc / NF: <b>${loc.numero_documento}</b> | Operador: <b>${loc.operador}</b>
+                            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                <span style="font-weight: 700; font-size: 0.95rem; color: var(--dark);">
+                                    <i class="fas fa-building" style="color: ${borderCol};"></i> ${end.nome}
+                                </span>
+                                ${isPrincipal ? '<span class="badge" style="background: #28a745; color: white; font-size: 0.7rem; padding: 2px 8px; border-radius: 12px;"><i class="fas fa-star"></i> Principal</span>' : ''}
+                                <span class="badge" style="background: #e3f2fd; color: #1565C0; font-size: 0.72rem; padding: 2px 8px; border-radius: 12px;">
+                                    <i class="fas fa-truck"></i> ${end.total_entregas} entrega(s)
+                                </span>
+                                <span class="badge" style="background: #f8f9fa; border: 1px solid #ddd; color: #666; font-size: 0.7rem; padding: 2px 6px; border-radius: 10px;">
+                                    Raio: ${end.raio_km || 1.0} km
+                                </span>
+                            </div>
+                            <small style="color: #666; font-size: 0.76rem; margin-top: 4px; display: block;">
+                                <b>Região:</b> ${end.regiao || 'Distrito Federal'} | <b>Última entrega:</b> ${end.ultima_entrega || 'N/D'}
                             </small>
                         </div>
-                        <button onclick="focusLocationMarker(${loc.lat}, ${loc.lng}, ${idx})" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.72rem; width: auto; color: #007bff; border-color: #007bff;" title="Ver ponto no mapa">
-                            <i class="fas fa-crosshairs"></i> No Mapa
+                        <button onclick="renameClientAddress('${clientInfo.cnpj}', ${end.id}, '${end.nome.replace(/'/g, "\\'")}')" class="btn btn-outline" style="padding: 4px 8px; font-size: 0.72rem; width: auto; color: #555; border-color: #ccc;" title="Renomear endereço / apelido da obra">
+                            <i class="fas fa-pencil-alt"></i> Renomear
                         </button>
                     </div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
-                        <span style="font-size: 0.72rem; color: #888; font-weight: 600;">Cilindros:</span>
-                        ${gasList}
-                    </div>
-                    <div style="display: flex; gap: 8px; border-top: 1px dashed #eee; padding-top: 8px; margin-top: 2px;">
-                        <a href="https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}" target="_blank" class="btn btn-primary" style="font-size: 0.75rem; padding: 6px 10px; flex: 1; text-align: center; text-decoration: none; border-radius: 6px;">
+
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <button onclick="focusAddressMarker(${idx})" class="btn btn-outline" style="font-size: 0.75rem; padding: 6px 10px; flex: 1; border-color: ${borderCol}; color: ${borderCol}; border-radius: 6px;">
+                            <i class="fas fa-crosshairs"></i> No Mapa
+                        </button>
+                        <a href="https://www.google.com/maps/dir/?api=1&destination=${end.lat},${end.lng}" target="_blank" class="btn btn-primary" style="font-size: 0.75rem; padding: 6px 10px; flex: 1; text-align: center; text-decoration: none; border-radius: 6px;">
                             <i class="fas fa-route"></i> Google Maps
                         </a>
-                        <a href="https://waze.com/ul?ll=${loc.lat},${loc.lng}&navigate=yes" target="_blank" class="btn btn-outline" style="font-size: 0.75rem; padding: 6px 10px; flex: 1; text-align: center; text-decoration: none; border-radius: 6px; border-color: #33ccff; color: #0099cc;">
+                        <a href="https://waze.com/ul?ll=${end.lat},${end.lng}&navigate=yes" target="_blank" class="btn btn-outline" style="font-size: 0.75rem; padding: 6px 10px; flex: 1; text-align: center; text-decoration: none; border-radius: 6px; border-color: #33ccff; color: #0099cc;">
                             <i class="fab fa-waze"></i> Waze
                         </a>
+                        ${!isPrincipal ? `
+                        <button onclick="setAddressAsPrincipal('${clientInfo.cnpj}', ${end.id})" class="btn btn-outline" style="font-size: 0.75rem; padding: 6px 10px; flex: 1; border-color: #28a745; color: #28a745; background: #f0fff4; border-radius: 6px;">
+                            <i class="fas fa-star"></i> Definir Principal
+                        </button>
+                        ` : ''}
                     </div>
+
+                    <!-- Acordeom para ver histórico detalhado deste endereço -->
+                    ${delivs.length > 0 ? `
+                    <div style="border-top: 1px dashed #e2e8f0; padding-top: 8px;">
+                        <button onclick="toggleAddressDeliveries(${end.id})" style="background: none; border: none; font-size: 0.75rem; color: #007bff; cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 0; font-weight: 600;">
+                            <i class="fas fa-chevron-down" id="deliv-chevron-${end.id}"></i> Ver entregas realizadas neste local (${delivs.length})
+                        </button>
+                        <div id="deliv-history-${end.id}" style="display: none; margin-top: 8px; flex-direction: column; gap: 6px;">
+                            ${delivs.map(d => {
+                                const gasList = (d.itens || []).map(i => `<span style="background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 0.7rem;">${i.qtd}x ${i.gas} ${i.tam}${i.obs ? ' (' + i.obs + ')' : ''}</span>`).join(' ') || 'Cilindros de gás';
+                                return `
+                                <div style="background: #f8fafc; border-radius: 6px; padding: 8px; font-size: 0.75rem; border: 1px solid #edf2f7;">
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                        <span><b>Data:</b> ${d.data_entrega || 'N/D'} | <b>Doc:</b> ${d.numero_documento}</span>
+                                        <span style="color: #666;"><b>Op:</b> ${d.operador}</span>
+                                    </div>
+                                    <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                                        ${gasList}
+                                    </div>
+                                </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                    ` : ''}
                 </div>
                 `;
             }).join('');
         }
 
     } catch (err) {
-        console.error("Erro ao carregar localizações do cliente:", err);
+        console.error("Erro ao carregar endereços do cliente:", err);
         if (mapLoading) mapLoading.style.display = 'none';
         if (listContainer) {
             listContainer.innerHTML = `
                 <div style="text-align: center; padding: 2rem; color: var(--danger);">
                     <i class="fas fa-exclamation-triangle" style="font-size: 1.8rem; margin-bottom: 8px;"></i>
-                    <p style="margin: 0; font-size: 0.9rem; font-weight: 600;">Não foi possível carregar as localizações do cliente.</p>
+                    <p style="margin: 0; font-size: 0.9rem; font-weight: 600;">Não foi possível carregar os endereços do cliente.</p>
                     <small style="color: #888;">${err.message}</small>
                 </div>
             `;
@@ -2635,31 +2668,76 @@ async function openClientAllLocations(cnpj, clientName) {
     }
 }
 
-function focusLocationMarker(lat, lng, index) {
-    if (clientLocationsMap) {
-        clientLocationsMap.setView([lat, lng], 17, { animate: true });
-        if (clientLocationsMarkers[index] && clientLocationsMarkers[index].marker) {
-            clientLocationsMarkers[index].marker.openPopup();
+function focusAddressMarker(index) {
+    if (clientLocationsMap && clientLocationsMarkers[index]) {
+        const item = clientLocationsMarkers[index];
+        clientLocationsMap.setView([item.lat, item.lng], 16, { animate: true });
+        if (item.marker) {
+            item.marker.openPopup();
+        }
+        if (item.circle) {
+            item.circle.setStyle({ fillOpacity: 0.25, weight: 2.5 });
+            setTimeout(() => {
+                if (item.circle) item.circle.setStyle({ fillOpacity: 0.10, weight: 1.5 });
+            }, 2000);
         }
     }
 }
 
-async function setDeliveryAsMainLocation(cnpj, lat, lng) {
-    if (!cnpj) return;
+function toggleAddressDeliveries(enderecoId) {
+    const el = document.getElementById(`deliv-history-${enderecoId}`);
+    const chev = document.getElementById(`deliv-chevron-${enderecoId}`);
+    if (el) {
+        if (el.style.display === 'none' || el.style.display === '') {
+            el.style.display = 'flex';
+            if (chev) chev.className = 'fas fa-chevron-up';
+        } else {
+            el.style.display = 'none';
+            if (chev) chev.className = 'fas fa-chevron-down';
+        }
+    }
+}
+
+async function renameClientAddress(cnpj, enderecoId, currentName) {
+    const novoNome = prompt("Informe o novo nome/identificador para este endereço:", currentName);
+    if (!novoNome || !novoNome.trim() || novoNome.trim() === currentName) return;
+
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
-        const res = await fetch('/api/clientes/localizacao', {
-            method: 'POST',
-            headers: { 
+        const res = await fetch(`/api/clientes/${encodeURIComponent(cnpj)}/enderecos/${enderecoId}`, {
+            method: 'PUT',
+            headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}`
             },
-            body: JSON.stringify({ cnpj, lat: String(lat), lng: String(lng) })
+            body: JSON.stringify({ nome: novoNome.trim() })
         });
         if (res.ok) {
-            showToast("Definido como endereço principal do cliente com sucesso!");
+            showToast("Nome do endereço atualizado!");
+            openClientAllLocations(cnpj, "");
+        } else {
+            showToast("Erro ao renomear endereço", "error");
+        }
+    } catch (e) {
+        showToast("Erro de conexão", "error");
+    }
+}
+
+async function setAddressAsPrincipal(cnpj, enderecoId) {
+    if (!cnpj || !enderecoId) return;
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch(`/api/clientes/${encodeURIComponent(cnpj)}/enderecos/${enderecoId}/principal`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${(session && session.access_token ? session.access_token : "")}`
+            }
+        });
+        if (res.ok) {
+            showToast("Endereço definido como principal com sucesso!");
             loadClients();
-            closeClientLocationsModal();
+            openClientAllLocations(cnpj, "");
         } else {
             showToast("Erro ao atualizar endereço principal", "error");
         }
@@ -2675,7 +2753,9 @@ function closeClientLocationsModal() {
         clientLocationsMap.remove();
         clientLocationsMap = null;
         clientLocationsMarkers = [];
+        clientLocationsCircles = [];
     }
+    currentViewingCnpj = null;
 }
 
 function isAdminUser() {
